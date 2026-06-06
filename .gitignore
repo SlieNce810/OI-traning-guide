@@ -32,3 +32,6 @@
 *.app
 /第5章-图论算法与模型/.DS_Store
 *.DS_Store
+
+# mdBook build output
+/book/
