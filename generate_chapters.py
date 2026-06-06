@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-Auto-generate chapter markdown files for mdBook.
-Scans chapter directories, reads .cpp file headers, and generates
-chapter pages with embedded code.
+Auto-generate mdBook chapter and section markdown files.
+Each section gets its own .md page — this is the standard mdBook approach
+for reliable content rendering and section navigation.
 """
 import os, re
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, 'src')
-CHAPTERS_DIR = ROOT  # chapters are at root level
 
-# Chapter order / names
 CHAPTERS = [
     ("第1章-算法设计基础", "第1章 算法设计基础"),
     ("第2章-数学基础", "第2章 数学基础"),
@@ -22,21 +20,28 @@ CHAPTERS = [
 
 
 def natural_key(name):
-    """Sort sections by numeric prefix (e.g., 1.1, 3.10)."""
     m = re.match(r'^(\d+)\.(\d+)', name)
     if m:
         return (int(m.group(1)), int(m.group(2)))
     return (999, 999)
 
 
+def normalize_section_heading(dir_name):
+    """Extract clean section name from directory name.
+    '1.1-思维的体操' -> '思维的体操'
+    """
+    m = re.match(r'^\d+\.\d+-(.*)', dir_name)
+    if m:
+        rest = re.sub(r'\s+', '', m.group(1))
+        return rest
+    return dir_name
+
+
 def extract_title(filepath):
-    """Extract problem title from the first comment line of a .cpp file."""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
-                # Match: // 例题N  name (EN, OJ ID)
-                # or:    //   name (EN, OJ ID)
                 if line.startswith('//') and len(line) > 2:
                     content = line[2:].strip()
                     if content:
@@ -48,84 +53,98 @@ def extract_title(filepath):
     return os.path.splitext(os.path.basename(filepath))[0]
 
 
-def normalize_section_heading(dir_name):
-    """Convert directory name to section heading for SUMMARY.md consistency.
-
-    "1.1-思维的体操" -> "1.1 思维的体操"
-    "2.2-递 推 关 系" -> "2.2 递推关系"
-    "3.8-动态树与LCT" -> "3.8 动态树与LCT"
+def section_file_name(section_dir_name, chapter_id):
+    """Generate filename for a section page.
+    '1.1-思维的体操' -> 'chapter1-section-1.1.md'
     """
-    # Split at the first hyphen after the numeric prefix (e.g., "1.1-")
-    m = re.match(r'^(\d+\.\d+)-(.*)', dir_name)
+    m = re.match(r'^(\d+\.\d+)', section_dir_name)
     if m:
-        prefix = m.group(1)
-        rest = m.group(2)
-        # Normalize spaces in the rest (e.g., "递 推 关 系" -> "递推关系")
-        rest = re.sub(r'\s+', '', rest)
-        return f'{prefix} {rest}'
-    return dir_name
+        return f'chapter{chapter_id}-section-{m.group(1)}.md'
+    return f'chapter{chapter_id}-section-{section_dir_name}.md'
 
 
-def generate_chapter(chapter_dir, chapter_title, chapter_id):
-    """Generate one chapter markdown file."""
-    chapter_path = os.path.join(CHAPTERS_DIR, chapter_dir)
-    if not os.path.isdir(chapter_path):
-        return
+def generate_summary(sections_by_chapter):
+    """Generate SUMMARY.md from collected sections."""
+    lines = ['# 目录\n', '- [前言](README.md)']
 
-    # Collect sections
-    sections = []
-    for name in sorted(os.listdir(chapter_path), key=natural_key):
-        section_path = os.path.join(chapter_path, name)
-        if not os.path.isdir(section_path):
+    for i, (ch_dir, ch_title) in enumerate(CHAPTERS, 1):
+        secs = sections_by_chapter.get(i, [])
+        if not secs:
             continue
-        cpp_files = sorted(
-            [f for f in os.listdir(section_path) if f.endswith('.cpp')]
-        )
-        if not cpp_files:
+        ch_file = f'chapter{i}.md'
+        lines.append(f'- [{ch_title}]({ch_file})')
+        for sec_num, sec_heading, sec_file in secs:
+            lines.append(f'  - [{sec_num} {sec_heading}]({sec_file})')
+
+    lines.append('- [勘误](Errata.md)')
+
+    with open(os.path.join(SRC, 'SUMMARY.md'), 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+    print('Generated SUMMARY.md')
+
+
+def generate_all():
+    os.makedirs(SRC, exist_ok=True)
+    sections_by_chapter = {}  # chapter_id -> [(sec_num, sec_heading, sec_file)]
+
+    for ch_id, (ch_dir, ch_title) in enumerate(CHAPTERS, 1):
+        chapter_path = os.path.join(ROOT, ch_dir)
+        if not os.path.isdir(chapter_path):
             continue
 
-        sections.append((name, section_path, cpp_files))
+        # Generate chapter index page (just intro, no section content)
+        ch_index = [f'# {ch_title}\n']
+        ch_file = os.path.join(SRC, f'chapter{ch_id}.md')
+        with open(ch_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(ch_index))
 
-    # Build markdown
-    lines = []
-    lines.append(f"# {chapter_title}\n")
+        # Collect and sort sections
+        sections = []
+        for name in sorted(os.listdir(chapter_path), key=natural_key):
+            section_path = os.path.join(chapter_path, name)
+            if not os.path.isdir(section_path):
+                continue
+            cpp_files = sorted(
+                [f for f in os.listdir(section_path) if f.endswith('.cpp')]
+            )
+            if not cpp_files:
+                continue
 
-    for section_name, section_path, cpp_files in sections:
-        # Make section heading match SUMMARY.md format:
-        # Directory name "1.1-思维的体操" -> heading "1.1 思维的体操"
-        heading_section = normalize_section_heading(section_name)
-        lines.append(f"## {heading_section}\n")
+            sec_heading = normalize_section_heading(name)
+            m = re.match(r'^(\d+\.\d+)', name)
+            sec_num = m.group(1) if m else name
+            sec_file = section_file_name(name, ch_id)
+            sec_path = os.path.join(SRC, sec_file)
+            sections.append((sec_num, sec_heading, name, sec_path, section_path, cpp_files))
 
-        for cpp_file in cpp_files:
-            cpp_path = os.path.join(section_path, cpp_file)
-            title = extract_title(cpp_path)
+        sections_by_chapter[ch_id] = [
+            (s[0], s[1], os.path.basename(s[3])) for s in sections
+        ]
 
-            lines.append(f"### {title}\n")
-            lines.append("```cpp")
-            # Read and embed the source code directly (mdBook {{#include}} with
-            # Unicode paths outside src/ is unreliable across CI environments)
-            try:
-                with open(cpp_path, 'r', encoding='utf-8') as f:
-                    code = f.read().rstrip('\n')
-                lines.append(code)
-            except Exception:
-                lines.append(f"// Source file: {section_name}/{cpp_file}")
-            lines.append("```\n")
+        # Generate each section page
+        for sec_num, sec_heading, orig_name, sec_path, section_path, cpp_files in sections:
+            lines = [f'# {sec_num} {sec_heading}\n']
 
-    # Write file
-    output_path = os.path.join(SRC, f"chapter{chapter_id}.md")
-    os.makedirs(SRC, exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(lines))
-    print(f"Generated {output_path} ({len(sections)} sections)")
+            for cpp_f in cpp_files:
+                cpp_path = os.path.join(section_path, cpp_f)
+                title = extract_title(cpp_path)
+                lines.append(f'## {title}\n')
+                lines.append('```cpp')
+                try:
+                    with open(cpp_path, 'r', encoding='utf-8') as f:
+                        code = f.read().rstrip('\n')
+                    lines.append(code)
+                except Exception:
+                    lines.append(f'// Source: {orig_name}/{cpp_f}')
+                lines.append('```\n')
 
+            with open(sec_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines))
 
-def main():
-    os.makedirs(SRC, exist_ok=True)
+        print(f'Chapter {ch_id}: {ch_title} ({len(sections)} sections)')
 
-    for i, (dir_name, title) in enumerate(CHAPTERS, 1):
-        generate_chapter(dir_name, title, i)
+    generate_summary(sections_by_chapter)
 
 
 if __name__ == '__main__':
-    main()
+    generate_all()

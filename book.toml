@@ -9,4 +9,6 @@ title = "算法竞赛入门经典-训练指南-升级版 配套网站"
 git-repository-url = "https://github.com/SlieNce810/OI-traning-guide"
 git-repository-icon = "fa-github"
 edit-url-template = "https://github.com/SlieNce810/OI-traning-guide/edit/master/{path}"
+fold.enable = true
+fold.level = 0
 search.enable = true
