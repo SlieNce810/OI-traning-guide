@@ -1,6 +1,6 @@
 # 第3章 实用数据结构
 
-## 3.1-基础数据结构回顾
+## 3.1 基础数据结构回顾
 
 ### 例题6  合作网络（Corporative Network, Codeforces Gym 101461B）
 
@@ -38,7 +38,7 @@
 {{#include ../第3章-实用数据结构/3.1-基础数据结构回顾/UVa11997.cpp}}
 ```
 
-## 3.2-区间信息的维护与查询
+## 3.2 区间信息的维护与查询
 
 ### 例题7  乒乓比赛（Ping pong, Beijing 2008, LA4329）
 
@@ -76,7 +76,7 @@
 {{#include ../第3章-实用数据结构/3.2-区间信息的维护与查询/UVa1400.cpp}}
 ```
 
-## 3.3-字符串（1）
+## 3.3 字符串（1）
 
 ### 例题15  周期（Period, SEERC 2004, Codeforces Gym101461A）
 
@@ -114,7 +114,7 @@
 {{#include ../第3章-实用数据结构/3.3-字符串（1）/UVa1449.cpp}}
 ```
 
-## 3.4-字符串（2）
+## 3.4 字符串（2）
 
 ### 例题20  口吃的外星人（Stammering Aliens, SWERC 2009, UVa12206）
 
@@ -134,7 +134,7 @@
 {{#include ../第3章-实用数据结构/3.4-字符串（2）/UVa11475.cpp}}
 ```
 
-## 3.5-字符串（3）
+## 3.5 字符串（3）
 
 ### 例题25  转世（Reincarnation HDU4622）
 
@@ -178,7 +178,7 @@
 {{#include ../第3章-实用数据结构/3.5-字符串（3）/SPOJ_SUBST1.cpp}}
 ```
 
-## 3.6-排序二叉树
+## 3.6 排序二叉树
 
 ### 例题30  图询问（Graph and Queries, Tianjin 2010, LA 5031/HDU3726）
 
@@ -204,7 +204,7 @@
 {{#include ../第3章-实用数据结构/3.6-排序二叉树/UVa11996.cpp}}
 ```
 
-## 3.7-树的经典问题与方法
+## 3.7 树的经典问题与方法
 
 ### 例题34  Rikka与路径的交集（Rikka with Intersection of Paths, ACM/ICPC徐州2018, CodeforceGym 102012G）
 
@@ -260,7 +260,7 @@
 {{#include ../第3章-实用数据结构/3.7-树的经典问题与方法/UVa1674_LCA.cpp}}
 ```
 
-## 3.8-动态树与LCT
+## 3.8 动态树与LCT
 
 ### 例题43  大厨和图上查询（Chef and Graph Queries，Codechef GERALD 07）
 
@@ -286,7 +286,7 @@
 {{#include ../第3章-实用数据结构/3.8-动态树与LCT/UVa11994.cpp}}
 ```
 
-## 3.9-离线算法
+## 3.9 离线算法
 
 ### 例题48 金币（Coins, ACM/ICPC Asia – Amritapuri 2015，Codechef AMCOINS）
 
@@ -324,7 +324,7 @@
 {{#include ../第3章-实用数据结构/3.9-离线算法/SPOJ_Meteors.cpp}}
 ```
 
-## 3.10-kd-Tree
+## 3.10 kd-Tree
 
 ### 例题51  寻找酒店（Finding Hotels, ACM/ICPC 青岛 2016, LA7744/HDU5992
 
@@ -338,7 +338,7 @@
 {{#include ../第3章-实用数据结构/3.10-kd-Tree/UVa12939.cpp}}
 ```
 
-## 3.11-可持久化数据结构
+## 3.11 可持久化数据结构
 
 ### 例题55  树上异或（Tree, ACM/ICPC 2013南京在线赛, HDU4757）
 

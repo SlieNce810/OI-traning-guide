@@ -1,6 +1,6 @@
 # 第2章 数学基础
 
-## 2.1-基本计数方法
+## 2.1 基本计数方法
 
 ### 例题2  数三角形（Triangle Counting, UVa11401）
 
@@ -20,7 +20,7 @@
 {{#include ../第2章-数学基础/2.1-基本计数方法/UVa11806.cpp}}
 ```
 
-## 2.2-递 推 关 系
+## 2.2 递推关系
 
 ### 例题4  多叉树遍历（Exploring Pyramids, NEERC 2005, Codeforces Gym101334E）
 
@@ -46,7 +46,7 @@
 {{#include ../第2章-数学基础/2.2-递 推 关 系/UVa11361.cpp}}
 ```
 
-## 2.3-数论
+## 2.3 数论
 
 ### 例题14  墨菲斯（Mophues, ACM/ICPC Asia Regional Hangzhou Online 2013, HDU4746）
 
@@ -96,7 +96,7 @@
 {{#include ../第2章-数学基础/2.3-数论/UVa11916.cpp}}
 ```
 
-## 2.4-组合游戏
+## 2.4 组合游戏
 
 ### 例题17  Treblecross游戏（Treblecross, UVa 10561）
 
@@ -110,7 +110,7 @@
 {{#include ../第2章-数学基础/2.4-组合游戏/UVa1482.cpp}}
 ```
 
-## 2.5-概率与数学期望
+## 2.5 概率与数学期望
 
 ### UVa11021 Tribles
 
@@ -136,7 +136,7 @@
 {{#include ../第2章-数学基础/2.5-概率与数学期望/UVa11762.cpp}}
 ```
 
-## 2.6-置换及其应用
+## 2.6 置换及其应用
 
 ### 例题23  Leonardo的笔记本（Leonardo's Notebook , NWERC 2006, Codeforces Gym100722I）
 
@@ -156,7 +156,7 @@
 {{#include ../第2章-数学基础/2.6-置换及其应用/UVa11077.cpp}}
 ```
 
-## 2.7-矩阵和线性方程组
+## 2.7 矩阵和线性方程组
 
 ### 例题27  细胞自动机（Cellular Automaton, NEERC 2006, Codeforces Gym100287C）
 
@@ -182,7 +182,7 @@
 {{#include ../第2章-数学基础/2.7-矩阵和线性方程组/UVa11542.cpp}}
 ```
 
-## 2.8-快速傅里叶变换（FFT）
+## 2.8 快速傅里叶变换（FFT）
 
 ### 例题33  等差数列（Arithmetic Progressions, CodeChef COUNTARI）
 
@@ -220,7 +220,7 @@
 {{#include ../第2章-数学基础/2.8-快速傅里叶变换（FFT）/UVa13277.cpp}}
 ```
 
-## 2.9-数值方法简介
+## 2.9 数值方法简介
 
 ### 例题37  误差曲线（Error Curves, Chengdu 2010, LA5009）
 

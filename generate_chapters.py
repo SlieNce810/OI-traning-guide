@@ -48,6 +48,24 @@ def extract_title(filepath):
     return os.path.splitext(os.path.basename(filepath))[0]
 
 
+def normalize_section_heading(dir_name):
+    """Convert directory name to section heading for SUMMARY.md consistency.
+
+    "1.1-思维的体操" -> "1.1 思维的体操"
+    "2.2-递 推 关 系" -> "2.2 递推关系"
+    "3.8-动态树与LCT" -> "3.8 动态树与LCT"
+    """
+    # Split at the first hyphen after the numeric prefix (e.g., "1.1-")
+    m = re.match(r'^(\d+\.\d+)-(.*)', dir_name)
+    if m:
+        prefix = m.group(1)
+        rest = m.group(2)
+        # Normalize spaces in the rest (e.g., "递 推 关 系" -> "递推关系")
+        rest = re.sub(r'\s+', '', rest)
+        return f'{prefix} {rest}'
+    return dir_name
+
+
 def generate_chapter(chapter_dir, chapter_title, chapter_id):
     """Generate one chapter markdown file."""
     chapter_path = os.path.join(CHAPTERS_DIR, chapter_dir)
@@ -73,10 +91,10 @@ def generate_chapter(chapter_dir, chapter_title, chapter_id):
     lines.append(f"# {chapter_title}\n")
 
     for section_name, section_path, cpp_files in sections:
-        # Generate heading ID matching SUMMARY.md
-        # Keep Chinese chars but lowercase for ID consistency
-        section_display = section_name.lstrip('0123456789.-')
-        lines.append(f"## {section_name}\n")
+        # Make section heading match SUMMARY.md format:
+        # Directory name "1.1-思维的体操" -> heading "1.1 思维的体操"
+        heading_section = normalize_section_heading(section_name)
+        lines.append(f"## {heading_section}\n")
 
         for cpp_file in cpp_files:
             cpp_path = os.path.join(section_path, cpp_file)
