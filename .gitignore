@@ -35,3 +35,6 @@
 
 # mdBook build output
 /book/
+
+.codebuddy/
+.workbuddy/

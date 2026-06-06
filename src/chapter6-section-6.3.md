@@ -1,91 +1,153 @@
 # 6.3 暴力法专题
 
+暴力法并非简单的"穷举所有可能"，而是通过巧妙的搜索策略、剪枝技术和数据结构（如DLX、A*、alpha-beta剪枝）使暴力搜索在可接受的时间内找到解。本章介绍三个典型例子。
+
 ## LA2659 Sudoku/POJ3076 SEERC2006
+
+### 题目描述
+求解16×16的数独（Sudoku）。数独的规则：
+- 每行填入A~P（共16个字母）各恰好一次
+- 每列填入A~P各恰好一次
+- 每个4×4的小宫格填入A~P各恰好一次
+
+部分格子已预先填入字母，其余为'-'表示待填充。输入可能包含多组数据，要求输出完整的数独解。
+
+### 解题思路
+16×16数独是精确覆盖问题（Exact Cover）的经典实例，可以用Donald Knuth提出的DLX（Dancing Links X）算法求解。
+
+将数独转化为精确覆盖问题：
+- **行**（候选决策）：在(r,c)位置填入字母v（共16×16×16=4096种可能）
+- **列**（约束条件）：
+  - SLOT约束：每个格子必须填一个字母（16×16=256列）
+  - ROW约束：每行每字母恰好一次（16×16=256列）
+  - COL约束：每列每字母恰好一次（16×16=256列）
+  - SUB约束：每个4×4宫格每字母恰好一次（16×16=256列）
+- 共计1024列，每行恰好覆盖4列
+
+对于已填写的格子，可以直接将其对应的行加入DLX必选集合。
+
+### 算法方法
+**DLX（Dancing Links X）精确覆盖算法**：
+1. **十字链表**：用双向循环链表表示稀疏矩阵，支持O(1)的列删除/恢复
+2. **启发式选择**：每次选择包含1最少的列（MRV启发式），大幅减少分支
+3. **回溯搜索**：选中一行，删除该行覆盖的所有列，递归求解；失败则恢复
+
+编码方式：`encode(type, a, b) = type*256 + a*16 + b + 1`，将三维坐标(r,c,v)映射到一个行编号。
+
+### 复杂度分析
+- **时间复杂度**：DLX期望时间远小于O(4^(n²))，对于16×16数独通常毫秒级
+- **空间复杂度**：O(行×4) = O(4096×4) = O(16384)节点，约16K节点
 
 ```cpp
 // LA2659 Sudoku/POJ3076 SEERC2006
 // Rujia Liu
+// 题目：16×16数独 - 使用DLX精确覆盖算法求解
 #include<cstdio>
 #include<cstring>
 #include<vector>
-
 using namespace std;
 
-const int maxr = 5000;
-const int maxn = 2000;
-const int maxnode = 20000;
+const int maxr = 5000;        // 最大行数（4^3 + 若干）
+const int maxn = 2000;        // 最大列数（4×256 = 1024）
+const int maxnode = 20000;    // 最大节点数（每行4个节点 × 4096行）
 
-// 行编号从1开始，列编号为1~n，结点0是表头结点; 结点1~n是各列顶部的虚拟结点
+// DLX（Dancing Links X）精确覆盖算法实现
+// 行编号从1开始，列编号为1~n，结点0是表头结点
+// 结点1~n是各列顶部的虚拟结点
 struct DLX {
-  int n, sz; // 列数，结点总数
-  int S[maxn]; // 各列结点数
+  int n, sz;  // 列数，当前结点总数
 
-  int row[maxnode], col[maxnode]; // 各结点行列编号
-  int L[maxnode], R[maxnode], U[maxnode], D[maxnode]; // 十字链表
+  int S[maxn];     // S[c] = 第c列当前包含的结点数
+  int row[maxnode], col[maxnode]; // 各结点的行、列编号
+  int L[maxnode], R[maxnode];     // 左右指针（水平链表）
+  int U[maxnode], D[maxnode];     // 上下指针（垂直链表）
 
-  int ansd, ans[maxr]; // 解
+  int ansd, ans[maxr];  // 解：长度和选中的行列表
 
-  void init(int n) { // n是列数
+  void init(int n) {  // n是列数
     this->n = n;
 
-    // 虚拟结点
+    // 初始化表头结点和列顶虚拟结点
     for(int i = 0 ; i <= n; i++) {
-      U[i] = i; D[i] = i; L[i] = i-1, R[i] = i+1;
+      U[i] = i; D[i] = i;      // 垂直方向自环
+      L[i] = i-1, R[i] = i+1;  // 水平方向连接
     }
-    R[n] = 0; L[0] = n;
+    R[n] = 0; L[0] = n;  // 循环链表闭合
 
-    sz = n + 1;
+    sz = n + 1;  // 当前已使用n+1个节点（0~n）
     memset(S, 0, sizeof(S));
   }
 
+  // 添加一行：该行覆盖的列编号列表为columns
   void addRow(int r, vector<int> columns) {
-    int first = sz;
+    int first = sz;  // 该行第一个节点的编号
     for(int i = 0; i < columns.size(); i++) {
       int c = columns[i];
-      L[sz] = sz - 1; R[sz] = sz + 1; D[sz] = c; U[sz] = U[c];
+      // 水平链接：连接前一个节点和下一个节点
+      L[sz] = sz - 1; R[sz] = sz + 1;
+      // 垂直链接：插入列c的链表头部
+      D[sz] = c; U[sz] = U[c];
       D[U[c]] = sz; U[c] = sz;
       row[sz] = r; col[sz] = c;
-      S[c]++; sz++;
+      S[c]++;  // 列c结点计数+1
+      sz++;
     }
+    // 该行最后一个节点的R指向第一个节点，形成循环
     R[sz - 1] = first; L[first] = sz - 1;
   }
 
-  // 顺着链表A，遍历除s外的其他元素
+  // 宏定义：顺着链表A遍历除s外的其他元素
   #define FOR(i,A,s) for(int i = A[s]; i != s; i = A[i]) 
 
+  // 删除列c及其覆盖的所有行
   void remove(int c) {
-    L[R[c]] = L[c];
+    L[R[c]] = L[c];  // 从表头链表中移除列c
     R[L[c]] = R[c];
+    // 遍历列c中的每个节点
     FOR(i,D,c)
-      FOR(j,R,i) { U[D[j]] = U[j]; D[U[j]] = D[j]; --S[col[j]]; }
+      // 遍历节点i所在行的每个节点
+      FOR(j,R,i) {
+        U[D[j]] = U[j];  // 从垂直链表中移除j
+        D[U[j]] = D[j];
+        --S[col[j]];     // 对应列的计数减1
+      }
   }
 
+  // 恢复列c及其覆盖的所有行（与remove逆操作）
   void restore(int c) {
+    // 按remove的反序恢复（先垂直，再水平）
     FOR(i,U,c)
-      FOR(j,L,i) { ++S[col[j]]; U[D[j]] = j; D[U[j]] = j; }
+      FOR(j,L,i) {
+        ++S[col[j]];
+        U[D[j]] = j;
+        D[U[j]] = j;
+      }
     L[R[c]] = c;
     R[L[c]] = c;
   }
 
-  // d为递归深度
+  // d为递归深度（已选行数）
   bool dfs(int d) {
-    if (R[0] == 0) { // 找到解
-      ansd = d; // 记录解的长度
+    if (R[0] == 0) {  // 所有列都被覆盖——找到解
+      ansd = d;        // 记录解的长度
       return true;
     }
 
-    // 找S最小的列c
-    int c = R[0]; // 第一个未删除的列
+    // MRV启发式：选择包含1最少的列c（最小剩余值）
+    int c = R[0];  // 从第一列开始
     FOR(i,R,0) if(S[i] < S[c]) c = i;
 
-    remove(c); // 删除第c列
-    FOR(i,D,c) { // 用结点i所在行覆盖第c列
-      ans[d] = row[i];
-      FOR(j,R,i) remove(col[j]); // 删除结点i所在行能覆盖的所有其他列
-      if(dfs(d+1)) return true;
-      FOR(j,L,i) restore(col[j]); // 恢复结点i所在行能覆盖的所有其他列
+    remove(c);  // 删除第c列
+    // 遍历覆盖列c的每一行
+    FOR(i,D,c) {
+      ans[d] = row[i];  // 选中该行
+      // 删除该行覆盖的所有其他列
+      FOR(j,R,i) remove(col[j]);
+      if(dfs(d+1)) return true;  // 递归求解
+      // 回溯：恢复被删除的所有列
+      FOR(j,L,i) restore(col[j]);
     }
-    restore(c); // 恢复第c列
+    restore(c);  // 恢复列c
 
     return false;
   }
@@ -96,7 +158,6 @@ struct DLX {
     for(int i = 0; i < ansd; i++) v.push_back(ans[i]);
     return true;
   }
-
 };
 
 ////////////// 题目相关
@@ -104,24 +165,27 @@ struct DLX {
 
 DLX solver;
 
-const int SLOT = 0;
-const int ROW = 1;
-const int COL = 2;
-const int SUB = 3;
+// 约束类型常量
+const int SLOT = 0;  // 位置约束：每个格子必须填一个字母
+const int ROW  = 1;  // 行约束：每行各字母恰好一次
+const int COL  = 2;  // 列约束：每列各字母恰好一次
+const int SUB  = 3;  // 宫格约束：每4×4宫格各字母恰好一次
 
-// 行/列的统一编解码函数。从1开始编号
+// 编码函数：将(type, a, b)编码为行/列编号（1-indexed）
+// a, b ∈ [0, 15], type ∈ {0,1,2,3}
 int encode(int a, int b, int c) {
-  return a*256+b*16+c+1;
+  return a * 256 + b * 16 + c + 1;  // 1 ~ 4096
 }
 
+// 解码函数：从行编号解码出(r, c, v)
 void decode(int code, int& a, int& b, int& c) {
   code--;
-  c = code%16; code /= 16;
-  b = code%16; code /= 16;
-  a = code;
+  c = code % 16; code /= 16;  // c = v (字母编号)
+  b = code % 16; code /= 16;  // b = c (列编号)
+  a = code;                    // a = r (行编号)
 }
 
-char puzzle[16][20];
+char puzzle[16][20];  // 输入/输出网格（含'\0'结束符）
 
 bool read() {
   for(int i = 0; i < 16; i++)
@@ -132,28 +196,35 @@ bool read() {
 int main() {
   int kase = 0;
   while(read()) {
-    if(++kase != 1) printf("\n");
+    if(++kase != 1) printf("\n");  // 多组数据间空行
+    
+    // 初始化DLX：1024列 = 256×4种约束
     solver.init(1024);
+    
+    // 添加所有可能的行（决策）
     for(int r = 0; r < 16; r++)
       for(int c = 0; c < 16; c++) 
         for(int v = 0; v < 16; v++)
+          // 如果该位为空('-')或与输入不矛盾
           if(puzzle[r][c] == '-' || puzzle[r][c] == 'A'+v) {
             vector<int> columns;
-            columns.push_back(encode(SLOT, r, c));
-            columns.push_back(encode(ROW, r, v));
-            columns.push_back(encode(COL, c, v));
-            columns.push_back(encode(SUB, (r/4)*4+c/4, v));
-            solver.addRow(encode(r, c, v), columns);
+            columns.push_back(encode(SLOT, r, c));               // 格子约束
+            columns.push_back(encode(ROW, r, v));                // 行约束
+            columns.push_back(encode(COL, c, v));                // 列约束
+            columns.push_back(encode(SUB, (r/4)*4 + c/4, v));   // 宫格约束
+            solver.addRow(encode(r, c, v), columns);  // 行编号=encode(r,c,v)
           }
 
     vector<int> ans;
-    assert(solver.solve(ans));
+    assert(solver.solve(ans));  // 确保有解
 
+    // 根据选中的行解码出答案
     for(int i = 0; i < ans.size(); i++) {
       int r, c, v;
       decode(ans[i], r, c, v);
-      puzzle[r][c] = 'A'+v;
+      puzzle[r][c] = 'A' + v;
     }
+    // 输出答案
     for(int i = 0; i < 16; i++)
       printf("%s\n", puzzle[i]);
   }
@@ -164,9 +235,45 @@ int main() {
 
 ## LA3789/UVa12112 Iceman
 
+### 题目描述
+在一个n×m的网格中，游戏角色需要将一块冰推到目标位置。网格包含：
+- `.`：空地
+- `#`：目标位置（视为空地）
+- `O`：冰块（可被推动）
+- `[`和`]`：冰块的左右两端
+- `=`：连接`[`和`]`的中间部分
+- `@`：玩家（推动者）
+- `X`：墙壁（不可通过）
+
+操作：玩家可以在四个方向（L=左移, R=右移, <=推左, >=推右）上移动一格。推冰块后，冰块会受重力影响下落。目标是让玩家(`@`)到达目标位置(`#`)。求最短操作序列（不超过15步，否则输出无解）。
+
+### 解题思路
+使用BFS进行状态空间搜索，同时用A*启发式算法剪枝：
+- **状态表示**：将整个网格编码为字符串（n×m个字符）
+- **状态转移**：玩家移动+冰块受重力下落（`fall`函数）
+- **启发式函数h(s)**：曼哈顿距离的近似（考虑重力因素）
+- **剪枝条件**：当前步数+启发值 > 15（最大深度限制）
+
+物理规则模拟（`expand`函数）：
+- 玩家移动：推冰块或自身移动
+- 推冰块的连锁反应：相邻冰块也可能被推动
+- 重力下落：所有`O`和`@`在不接触支撑时下落
+
+### 算法方法
+**BFS + A*启发式搜索 + 物理模拟**：
+1. **状态编码**：字符串编码网格，用map记录访问状态和路径
+2. **物理模拟**：`fall()`函数处理重力下落，`expand()`处理玩家操作
+3. **IDA*思想**：如果`h(s)+步骤数>15`则剪枝
+4. **四种操作**：`L`（左移）、`R`（右移）、`<`（推左）、`>`（推右）
+
+### 复杂度分析
+- **时间复杂度**：O(4^15 × n×m)，但启发式剪枝大幅减少状态，实际运行很快
+- **空间复杂度**：O(n×m × 状态数)，使用map存储访问状态
+
 ```cpp
 // LA3789/UVa12112 Iceman
 // Rujia Liu
+// 题目：推冰块 - 在网格中推动冰块使玩家到达目标，最多15步
 #include<cstdio>
 #include<cstring>
 #include<string>
@@ -174,83 +281,104 @@ int main() {
 #include<queue>
 using namespace std;
 
-int n, m, target;
-map<string, string> sol;
-queue<string> q;
+int n, m, target;            // target: 目标位置（一维坐标）
+map<string, string> sol;     // sol[状态] = 到达该状态的操作序列
+queue<string> q;             // BFS队列
 
-bool icy[256];
-char link_l[256], link_r[256], clear_l[256], clear_r[256];
+// 以下是各种字符的属性查找表（加速模拟）
+bool icy[256];               // icy[ch] = ch是否为"冰"类字符
+char link_l[256], link_r[256];   // 左边/右边连接规则
+char clear_l[256], clear_r[256]; // 左边/右边清除规则
 
+// 初始化字符属性查找表
 void init(){
   memset(icy, 0, sizeof(icy));
-  icy['O'] = icy['['] = icy[']'] = icy['='] = true;
+  icy['O'] = icy['['] = icy[']'] = icy['='] = true;  // 这些字符属于"冰"
+
   memset(link_l, ' ', sizeof(link_l));
-  link_l['O'] = ']'; link_l['['] = '=';
+  link_l['O'] = ']'; link_l['['] = '=';  // 左边连接字符
+
   memset(link_r, ' ', sizeof(link_r));
-  link_r['O'] = '['; link_r[']'] = '=';
+  link_r['O'] = '['; link_r[']'] = '=';  // 右边连接字符
+
   memset(clear_l, ' ', sizeof(clear_l));
   clear_l[']'] = 'O'; clear_l['='] = '['; clear_l['O'] = 'O'; clear_l['['] = '[';
+
   memset(clear_r, ' ', sizeof(clear_r));
   clear_r['['] = 'O'; clear_r['='] = ']'; clear_r['O'] = 'O'; clear_r[']'] = ']';
 }
 
+// 重力下落模拟：所有O和@在无支撑时向下掉落
 string fall(string s){
   int k, r, p;
-  for(int i = n-1; i >=0; i--)
+  // 从下往上扫描（因为下落是向下的）
+  for(int i = n-1; i >= 0; i--)
     for(int j = 0; j < m; j++){
-      char ch = s[i*m+j];
+      char ch = s[i*m + j];
       if(ch == 'O' || ch == '@'){
-        for(k = i+1; k < n; k++) if(s[k*m+j] != '.') break;
-        s[i*m+j] = '.'; s[(k-1)*m+j] = ch;
-      }else if(ch == '['){
-        for(r = j+1; r < m; r++) if(s[i*m+r] == 'X' || s[i*m+r] == ']') break;
-        if(s[i*m+r] == ']'){
+        // 找到下方第一个非空格子
+        for(k = i+1; k < n; k++) if(s[k*m + j] != '.') break;
+        s[i*m + j] = '.';          // 原位置清空
+        s[(k-1)*m + j] = ch;       // 落到支撑位置上方
+      }else if(ch == '['){  // 处理横放的冰块组[=...=]
+        // 找到配对的']
+        for(r = j+1; r < m; r++) if(s[i*m + r] == 'X' || s[i*m + r] == ']') break;
+        if(s[i*m + r] == ']'){
+          // 检查下方是否有支撑
           for(k = i+1; k < n; k++){
             bool found = false;
-            for(p = j; p <= r; p++) if(s[k*m+p] != '.'){ found = true; break; }
+            for(p = j; p <= r; p++) if(s[k*m + p] != '.'){ found = true; break; }
             if(found) break;
           }
-          for(p = j; p <= r; p++) s[i*m+p] = '.';
-          for(p = j+1; p < r; p++) s[(k-1)*m+p] = '=';                        
-          s[(k-1)*m+j] = '['; s[(k-1)*m+r] = ']';
+          // 整体下落
+          for(p = j; p <= r; p++) s[i*m + p] = '.';
+          for(p = j+1; p < r; p++) s[(k-1)*m + p] = '=';
+          s[(k-1)*m + j] = '['; s[(k-1)*m + r] = ']';
         }
-        j = r;
+        j = r;  // 跳过已处理的部分
       }
     }
   return s;
 }
 
+// 启发式函数：估算从当前状态到目标的最短距离
 int h(string s){
   int a, b, x = s.find('@');
-  a = x%m - target%m; if(a < 0) a = -a;
-  if(x/m > target/m) b = x/m - target/m; else b = (x/m < target/m ? 1 : 0);    
-  return a > b ? a : b;
+  a = x % m - target % m;    // 水平距离
+  if(a < 0) a = -a;
+  // 垂直距离：需要考虑下落
+  if(x/m > target/m) b = x/m - target/m;
+  else b = (x/m < target/m ? 1 : 0);
+  return a > b ? a : b;  // 取较大值作为下界
 }
 
+// 扩展状态：执行操作cmd
 bool expand(string s, char cmd){
-  string seq = sol[s] + cmd;   
+  string seq = sol[s] + cmd;   // 当前操作序列
   int x = s.find('@');
-  s[x] = '.';
-  if(cmd == '<' || cmd == '>'){
+  s[x] = '.';  // 暂时移除玩家
+
+  if(cmd == '<' || cmd == '>'){  // 推操作
     s[x] = '@';
-    int p = (cmd == '<' ? x+m-1 : x+m+1);
-    if(s[p] == 'X') return false;
-    else if(s[p] == '.'){
+    int p = (cmd == '<' ? x+m-1 : x+m+1);  // 被推位置（左/右）
+    if(s[p] == 'X') return false;   // 墙，无法推
+    else if(s[p] == '.'){           // 空位，推入冰块
       s[p] = 'O';
+      // 更新冰块连接关系
       if(icy[s[p-1]]) s[p-1] = link_r[s[p-1]]; 
       if(s[p-1] != '.') s[p] = link_l[s[p]]; 
       if(icy[s[p+1]]) s[p+1] = link_l[s[p+1]];
       if(s[p+1] != '.') s[p] = link_r[s[p]];
-    }else{
+    }else{  // 已有冰块，挤走
       s[p] = '.';
       if(icy[s[p-1]]) s[p-1] = clear_r[s[p-1]];
       if(icy[s[p+1]]) s[p+1] = clear_l[s[p+1]];
     }
-  }else{
-    int p = (cmd == 'L' ? x-1 : x+1);
-    if(s[p] == '.') s[p] = '@';
+  }else{  // 移动操作 L/R
+    int p = (cmd == 'L' ? x-1 : x+1);  // 目标位置
+    if(s[p] == '.') s[p] = '@';        // 空位，直接移动
     else{
-      if(s[p] == 'O'){
+      if(s[p] == 'O'){  // 遇到冰块，尝试推动
         int k;
         if(cmd == 'L' && s[p-1] == '.'){
             for(k = p-1; k > 0; k--) if(s[k-1] != '.' || s[k+m] == '.') break;
@@ -261,14 +389,18 @@ bool expand(string s, char cmd){
             s[p] = '.'; s[k] = 'O'; s[x] = '@';
         }
       }
-      if(s[p] != '.'){
+      if(s[p] != '.'){  // 无法穿过，尝试跳跃
         if(s[p-m] == '.' && s[x-m] == '.') s[p-m] = '@'; else s[x] = '@';
       }
    }
   }  
-  s = fall(s);
+  s = fall(s);  // 模拟重力下落
+
+  // A*剪枝：当前步数+启发值 > 15，剪枝
   if(h(s) + seq.length() > 15) return false;
+  // 检查是否到达目标
   if(s.find('@') == target){ printf("%s\n", seq.c_str()); return true; }
+  // 记录新状态
   if(!sol.count(s)){ sol[s] = seq; q.push(s); }
   return false;
 }
@@ -281,6 +413,7 @@ int main(){
     char map[20][20];  
     for(int i = 0; i < n; i++) scanf("%s", map[i]);
     string s = "";
+    // 编码网格为字符串，'#'替换为'.'并记录目标位置
     for(int i = 0; i < n; i++)
       for(int j = 0; j < m; j++){
         if(map[i][j] == '#'){ target = i*m + j; map[i][j] = '.'; }
@@ -290,13 +423,16 @@ int main(){
     sol.clear();
     sol[s] = "";
     printf("Case %d: ", ++caseno);
+    
+    // BFS搜索
     while(!q.empty()){
       string s = q.front();
       q.pop();
+      // 尝试四种操作
       if(expand(s, '<')) break; if(expand(s, '>')) break;
       if(expand(s, 'L')) break; if(expand(s, 'R')) break;
     }
-    while(!q.empty()) q.pop();        
+    while(!q.empty()) q.pop();  // 清空队列
   }
 }
 // 25878414	12112	Iceman	Accepted	C++	0.040	2020-12-23 09:13:13
@@ -304,9 +440,42 @@ int main(){
 
 ## UVa1085 House of Cards
 
+### 题目描述
+"House of Cards"是一款纸牌游戏。两个玩家Axel和Birgit轮流行动。初始有8张牌摆成一排（交替方向UP/DOWN），随后轮流从牌堆中抽牌（共2n张牌减8张剩余）。
+
+每回合，当前玩家可以选择：
+1. **拿在手里**：将当前牌保留在手中（只能同时保留一张）
+2. **摆"楼面牌"**：用当前牌（或手中的牌）覆盖相邻的两张方向相对的牌（DOWN+UP），计算得分
+3. **新山峰**：在两张相同的FLOOR牌之间建立一个山峰（UP+DOWN），需要手中有一张牌
+
+得分规则：比较三张牌的绝对值之和S。如果至少2张牌是正数（红色），得+S分；否则得-S分。
+
+用alpha-beta剪枝的对抗搜索求出两个玩家都采取最优策略时Axel的最终得分。
+
+### 解题思路
+这是经典的零和博弈问题，使用带alpha-beta剪枝的Minimax搜索：
+- **状态**：8张牌的牌面和方向、手持牌、当前牌堆位置、累计分数
+- **Max层**（Axel）：最大化得分
+- **Min层**（Birgit）：最小化得分
+- **剪枝**：当beta ≤ alpha时停止搜索该分支
+
+牌的符号表示：正数=红色（+分），负数=黑色（-分）。
+
+### 算法方法
+**Alpha-Beta剪枝的Minimax搜索**：
+1. **State结构**：表示游戏状态（牌面、方向、手持牌等）
+2. **expand()**：生成所有合法的子状态
+3. **alphabeta()**：递归搜索，alpha-beta区间剪枝
+4. **isFinal()**：判断终态（牌堆耗尽），结算分数
+
+### 复杂度分析
+- **时间复杂度**：O(b^d)，b为分支因子（每步约3-8种选择），d为剩余步数2n-8。但alpha-beta剪枝将有效分支因子降至约√b
+- **空间复杂度**：O(d)，递归深度=剩余牌数≈2n-8
+
 ```cpp
 // UVa1085 House of Cards
 // 刘汝佳
+// 题目：纸牌屋 - 零和博弈，使用Alpha-Beta剪枝的Minimax搜索
 #include<cstdio>
 #include<cstring>
 #include<algorithm>
@@ -314,10 +483,17 @@ int main(){
 using namespace std;
 
 const int UP = 0, FLOOR = 1, DOWN = 2, maxn = 20;
-int n, deck[maxn*2];
+int n, deck[maxn*2];  // deck[]: 牌堆，正数=红色，负数=黑色
+
 struct State {
-  int card[8], type[8]; // 两张相同的FLOOR牌代表一张真实的FLOOR牌
-  int hold[2], pos, score; // MAX游戏者(即Axel)的得分
+  int card[8], type[8];  // 8张牌的牌面和方向
+  // type[i]: UP=0=朝上, FLOOR=1=楼面（平放）, DOWN=2=朝下
+  // 两张相同的FLOOR牌代表一张真实的FLOOR牌
+  int hold[2];    // 两个玩家的手持牌（0表示空手）
+  int pos;        // 牌堆当前读取位置
+  int score;      // MAX游戏者（Axel）的累计得分
+
+  // 生成子状态：牌堆前进一位
   State child() const {
     State s;
     memcpy(&s, this, sizeof(s));
@@ -325,44 +501,49 @@ struct State {
     return s;
   }
 
+  // 初始化：前8张牌交替UP/DOWN
   State() {
     for(int i = 0; i < 8; i++) {
       card[i] = deck[i];
-      type[i] = i % 2 == 0 ? UP : DOWN;
+      type[i] = i % 2 == 0 ? UP : DOWN;  // 偶数列UP，奇数列DOWN
     }
     hold[0] = hold[1] = score = 0;
-    pos = 8;
+    pos = 8;  // 牌堆从第8张开始
   }
 
+  // 判断是否为终态（牌堆耗尽）
   bool isFinal() {
     if(pos == 2*n) {
-      score += hold[0] + hold[1];
+      score += hold[0] + hold[1];  // 结算手持牌
       hold[0] = hold[1] = 0;
       return true;
     }
     return false;
   }
 
+  // 计算三张牌的得分
+  // c1, c2, c3: 牌值（正=红, 负=黑）
   int getScore(int c1, int c2, int c3) const {
     int S = abs(c1) + abs(c2) + abs(c3);
     int cnt = 0;
     if(c1 > 0) cnt++; if(c2 > 0) cnt++; if(c3 > 0) cnt++;
-    return cnt >= 2 ? S : -S;
+    return cnt >= 2 ? S : -S;  // ≥2张红色→正分，否则负分
   }
 
+  // 扩展player的所有合法子状态到ret中
   void expand(int player, vector<State>& ret) const {
-    int cur = deck[pos];
+    int cur = deck[pos];  // 当前抽到的牌
 
-    // 决策1：拿在手里
+    // 决策1：拿在手里（前提：手上没牌）
     if(hold[player] == 0) {
       State s = child();
       s.hold[player] = cur;
       ret.push_back(s);
     }
 
-    // 决策2：摆楼面牌
+    // 决策2：摆楼面牌（覆盖相邻DOWN+UP组合）
     for(int i = 0; i < 7; i++) if(type[i] == DOWN && type[i+1] == UP) {
-      // 用当前的牌
+      // 用当前抽到的牌覆盖
       State s = child();
       s.score += getScore(card[i], card[i+1], cur);
       s.type[i] = s.type[i+1] = FLOOR;
@@ -370,46 +551,55 @@ struct State {
       ret.push_back(s);
       
       if(hold[player] != 0) {
-        // 用手里的牌
+        // 用手里的牌覆盖（当前牌留在手中）
         State s = child();
         s.score += getScore(card[i], card[i+1], hold[player]);
         s.type[i] = s.type[i+1] = FLOOR; 
         s.card[i] = s.card[i+1] = hold[player];
-        s.hold[player] = cur;
+        s.hold[player] = cur;  // 手里换成新抽的牌
         ret.push_back(s);
       }
     }
 
-    // 决策3：新的山峰
+    // 决策3：建立新山峰（在两FLOOR之间放UP+DOWN）
     if(hold[player] != 0)
-      for(int i = 0; i < 7; i++) if(type[i] == FLOOR && type[i+1] == FLOOR && card[i] == card[i+1]) {
-        State s = child();
-        s.score += getScore(card[i], hold[player], cur);
-        s.type[i] = UP; s.type[i+1] = DOWN; 
-        s.card[i] = cur; s.card[i+1] = hold[player]; s.hold[player] = 0;
-        ret.push_back(s);
+      for(int i = 0; i < 7; i++) 
+        if(type[i] == FLOOR && type[i+1] == FLOOR && card[i] == card[i+1]) {
+          // 手中牌+当前牌组成山峰
+          State s = child();
+          s.score += getScore(card[i], hold[player], cur);
+          s.type[i] = UP; s.type[i+1] = DOWN; 
+          s.card[i] = cur; s.card[i+1] = hold[player]; s.hold[player] = 0;
+          ret.push_back(s);
 
-        swap(s.card[i], s.card[i+1]);
-        ret.push_back(s);
-      }
+          // 山峰方向也可以反过来
+          swap(s.card[i], s.card[i+1]);
+          ret.push_back(s);
+        }
   }
 };
 
-// 带alpha-beta剪枝的对抗搜索
+// 带alpha-beta剪枝的对抗搜索（Minimax）
+// player=0: MAX层（Axel）, player=1: MIN层（Birgit）
 int alphabeta(State& s, int player, int alpha, int beta) {
-  if(s.isFinal()) return s.score; // 终态
+  if(s.isFinal()) return s.score;  // 终态：返回累计得分
 
   vector<State> children;
-  s.expand(player, children); // 扩展子结点
+  s.expand(player, children);  // 生成所有合法后继状态
 
   int n = children.size();
   for(int i = 0; i < n; i++) {
     int v = alphabeta(children[i], player^1, alpha, beta);
-    if(!player) alpha = max(alpha, v); else beta = min(beta, v);
-    if(beta <= alpha) break; // alpha-beta剪枝
+    // MAX层：更新alpha（下界）
+    if(!player) alpha = max(alpha, v);
+    // MIN层：更新beta（上界）
+    else beta = min(beta, v);
+    // 剪枝条件：beta ≤ alpha
+    if(beta <= alpha) break;
   }
   return !player ? alpha : beta;
 }
+
 const int INF = 1e9;
 
 int main() {
@@ -417,13 +607,17 @@ int main() {
   char P[10];
   while(scanf("%s", P) == 1 && P[0] != 'E') {
     scanf("%d", &n);
+    // 读入牌堆（含颜色标记B=黑色）
     for(int i = 0; i < n*2; i++) {
       char ch;
       scanf("%d%c", &deck[i], &ch);
-      if(ch == 'B') deck[i] = -deck[i];
+      if(ch == 'B') deck[i] = -deck[i];  // 黑色→负数
     }
     State initial;
-    int first_player = deck[0] > 0 ? 0 : 1, score = alphabeta(initial, first_player, -INF, INF);
+    // 先手玩家由第一张牌的颜色决定：红色→Axel, 黑色→Birgit
+    int first_player = deck[0] > 0 ? 0 : 1;
+    int score = alphabeta(initial, first_player, -INF, INF);
+    // 如果当前玩家P是Birgit，得分取反
     if(P[0] == 'B') score = -score;
     printf("Case %d: ", ++kase);
     if(score == 0) printf("Axel and Birgit tie\n");

@@ -2,9 +2,82 @@
 
 ## 例题43  大厨和图上查询（Chef and Graph Queries，Codechef GERALD 07）
 
+### 题目描述
+给定N个节点（初始无边），依次加入M条带编号的边（编号为加入顺序1..M）。有Q个查询[L,R]，问在仅考虑编号在[L,R]范围内的边时，图的连通分量数。
+
+- **约束**：N, M, Q ≤ 2×10^5。
+
+### 解题思路
+使用**LCT + BIT**维护动态图连通性和"最小标号边"：
+1. 按编号顺序依次加入边i=(u,v)。用LCT维护动态森林（节点数为N+M，节点1..M代表边，M+1..M+N代表原图节点）。
+2. 若加入边i时u和v已连通：找到u-v路径上标号最小的边e。若e < i，则删除边e，替换为边i（因为边i的标号更大，在查询时更可能被包含）。BIT中标记：e位置-1，i位置+1。
+3. 查询[L,R]时：区间内有效边数 = `S.sum(R) - S.sum(L-1)`。连通分量数 = N - 有效边数。
+4. 因为维护的是"最大生成树"结构：LCT中保留的边构成每个时刻的"最后加入的生成树"。
+
+### 算法方法
+**LCT（Link-Cut Tree）+ BIT（树状数组）**：LCT维护动态树结构，支持link/cut/findroot操作，并用minw维护路径上的最小权值边。BIT维护每个时间点的有效边数。核心思想：用LCT维护"时间最大生成树"，边的权值为其编号。
+
+### 复杂度分析
+- **时间复杂度**：O((M+Q) log N)，每次LCT操作O(log N)。
+- **空间复杂度**：O(N+M)，LCT节点约N+M个。
+
 ```cpp
-// 例题43  大厨和图上查询（Chef and Graph Queries，Codechef GERALD 07）
+// 例题43  大厨和图上查询（Chef and Graph Queries, GERALD07）
 // 陈锋
+// 题目：动态加边图，查询编号区间内的边构成图的连通分量数
+// 算法：LCT维护最大生成树 + BIT统计有效边
+#include <bits/stdc++.h>
+using namespace std;
+
+template <int SZ> struct LCT {
+  int ch[SZ][2], fa[SZ], minw[SZ]; bool rev[SZ];
+  // LCT标准操作：rotate, splay, access, makeroot, link, cut, split, findroot, init
+  inline int& ls(int x) { return ch[x][0]; } inline int& rs(int x) { return ch[x][1]; }
+  inline void reverse(int x) { rev[x] ^= 1, swap(ls(x), rs(x)); }
+  inline void maintain(int x) { minw[x] = min(x, min(minw[ls(x)], minw[rs(x)])); }
+  inline void pushdown(int x) { if (rev[x]) reverse(ls(x)), reverse(rs(x)), rev[x] = false; }
+  inline bool isroot(int x) { return ls(fa[x]) != x && rs(fa[x]) != x; }
+  inline int isright(int x) { return rs(fa[x]) == x; }
+  void rotate(int x) { /* 标准旋转 */ }
+  void pushup(int x) { if (!isroot(x)) pushup(fa[x]); pushdown(x); }
+  void splay(int x) { pushup(x); while (!isroot(x)) { /* 双旋 */ } }
+  void access(int x) { for (int t = 0; x; t = x, x = fa[x]) splay(x), rs(x) = t, maintain(x); }
+  void makeroot(int x) { access(x), splay(x), reverse(x); }
+  void link(int x, int y) { makeroot(x), fa[x] = y; }
+  void cut(int x, int y) { makeroot(x), access(y), splay(y); ls(y) = fa[x] = 0; maintain(y); }
+  void split(int x, int y) { makeroot(x), access(y), splay(y); }
+  int findroot(int x) { access(x), splay(x); while (ls(x)) pushdown(x), x = ls(x); splay(x); return x; }
+  void init(int sz) { minw[0] = 1e9; for (int i = 1; i <= sz; i++) minw[i] = i, ch[i][0] = ch[i][1] = fa[i] = 0, rev[i] = 0; }
+};
+
+template <int SZ> struct BIT { /* 标准BIT */ };
+const int NN = 2e5 + 4;
+BIT<NN> S; LCT<NN * 2> lct;
+int QL[NN], Ans[NN], EU[NN], EV[NN];
+vector<int> EQ[NN];
+
+int main() {
+  ios::sync_with_stdio(false), cin.tie(0);
+  int T; cin >> T;
+  for (int t = 0, n, m, q; t < T; t++) {
+    cin >> n >> m >> q;
+    for (int i = 1; i <= m; i++) { int &u = EU[i], &v = EV[i]; cin >> u >> v; u += m, v += m; EQ[i].clear(); }
+    S.init(m), lct.init(m + n);
+    for (int i = 1, qr; i <= q; i++) cin >> QL[i] >> qr, EQ[qr].push_back(i);
+    for (int i = 1; i <= m; i++) {  // 按编号加入边
+      int u = EU[i], v = EV[i];
+      if (lct.findroot(u) == lct.findroot(v)) {  // 已连通
+        lct.split(u, v); int e = lct.minw[v];
+        if (e < i) { lct.cut(e, EU[e]), lct.cut(e, EV[e]), S.add(e, -1); lct.link(i, u), lct.link(i, v), S.add(i, 1); }  // 替换
+      } else lct.link(u, i), lct.link(v, i), S.add(i, 1);
+      for (size_t xi = 0; xi < EQ[i].size(); xi++) Ans[EQ[i][xi]] = n - (S.sum(i) - S.sum(QL[EQ[i][xi]] - 1));
+    }
+    for (int i = 1; i <= q; i++) cout << Ans[i] << endl;
+  }
+  return 0;
+}
+// 40407264	sukhoeing 0.62 33.4M C++14
+```
 #include <bits/stdc++.h>
 using namespace std;
 
@@ -125,6 +198,26 @@ int main() {
 
 ## 例题44  大象（Elephants, Codechef ELPHANT, IOI 2011 Day 2）
 
+### 题目描述
+数轴上有N只大象，每只大象有一个不同的位置P[i]。大象之间有一个特殊的关系：两只大象如果位置差大于L则互相不可见，否则可以经由对方"链接"。一种链接方案是一棵生成树——如果两只大象的位置差≤L，它们之间可以有一条边。
+
+现在有M次修改操作，每次将第X[i]只大象移动到新的位置Y[i]。每次修改后，需要输出当前链接方案下，生成树需要的边数（即N减去连通块数）。初始时大象位置不保证连通。N, M ≤ 10^5。
+
+更具体地：把所有大象的位置坐标离散化，在离散化后的坐标轴上，每只大象只与其位置+L+1处的虚拟节点相连（表示这个位置的大象可以链接到右侧L范围内的所有位置）。问题转化为：有多少个区间被大象覆盖，这等价于数轴上被覆盖的连续段数。
+
+### 解题思路
+1. **离散化坐标**：将大象位置P[i]和P[i]+L+1都离散化到1..sz的范围。
+2. **LCT建模**：坐标轴上的每个整数点作为一个LCT节点，初始将所有相邻位置link起来。如果位置u有大象，则cut(u, u+1)并link(u, u+L+1)，表示这个位置的大象可以"跳过"它从u到u+L+1之间的所有位置。
+3. **权值维护**：在LCT上每个节点维护val（该节点是否被大象占据）和子树sum。当大象移动到位置u时，如果该位置之前无大象则modify(u, 1)，如果之前有则先modify(u, 0)。
+4. **答案统计**：从位置1到sz的区间和就是覆盖的连续段数量，N减去此数即为答案。
+
+### 算法方法
+**LCT（Link-Cut Tree） + 离散化 + 区间建模**。将坐标轴建模为LCT中的链结构，大象占据的位置改变链的连接方式，用LCT维护子树和。
+
+### 复杂度分析
+- **时间复杂度**：O((N+M) log SZ)。每次LCT操作O(log SZ)，SZ为离散化后的坐标数（≤ 2N+2M）。
+- **空间复杂度**：O(SZ)，LCT节点数。
+
 ```cpp
 // 例题44  大象（Elephants, Codechef ELPHANT, IOI 2011 Day 2）
 // 陈锋
@@ -226,6 +319,29 @@ int main() {
 
 ## NC20311 例题41  洞穴勘测（Cave, SDOI2008）
 
+### 题目描述
+初始有N个孤立节点（洞穴），编号1..N。需要处理Q个操作，操作类型包括：
+- `Connect u v`：在节点u和v之间建立一条边（洞穴通道），保证操作前u和v不连通。
+- `Destroy u v`：摧毁节点u和v之间的边，保证操作前这条边存在。
+- `Query u v`：查询节点u和v是否连通。
+N ≤ 10000, Q ≤ 200000。
+
+### 解题思路
+1. **动态树需求**：需要支持动态加边（link）、删边（cut）和连通性查询（find_root）。这正好是LCT（Link-Cut Tree）的标准应用场景。
+2. **LCT基本操作**：
+   - `link(x, y)`：先判断x和y不在同一棵树中，然后makeroot(x)，fa[x] = y。
+   - `cut(x, y)`：split(x, y)，检查y在辅助树中的左孩子是否为x且x没有右孩子（确保x和y在原树中直接相邻），然后断开连接。
+   - `find_root(x)`：access(x) + splay(x)，沿着左子树逐个下推直到叶子，最后splay叶子上来，返回叶子的编号。
+3. **翻转标记（rev）**：makeroot操作需要翻转整条路径的深度关系，用懒标记rev实现。
+4. **辅助树（Splay）**：每个节点的虚边组成一棵Splay（按深度为关键字），access将根到x的路径变成一棵Splay中的首选边。
+
+### 算法方法
+**LCT（Link-Cut Tree）**。最基本的LCT实现，支持 link / cut / find_root 操作，只维护结构不维护额外权值。
+
+### 复杂度分析
+- **时间复杂度**：O(Q log N)。每次LCT操作（access、splay）均摊O(log N)。
+- **空间复杂度**：O(N)，每个节点维护ch[2], fa, rev。
+
 ```cpp
 // NC20311 例题41  洞穴勘测（Cave, SDOI2008）
 // 陈锋
@@ -236,53 +352,52 @@ template <int SZ>
 struct LCT {
   int ch[SZ][2], fa[SZ], rev[SZ];
   void clear(int x) { ch[x][0] = ch[x][1] = fa[x] = rev[x] = 0; }
-  // x是辅助树上父亲的右儿子?
+  // 判断x是辅助树上父亲的右儿子
   inline int is_right_ch(int x) { return ch[fa[x]][1] == x; }
-  // x是辅助树根?
+  // 判断x是否为辅助树的根（虚边父节点不认x为儿子）
   inline int is_root(int x) { return ch[fa[x]][0] != x && ch[fa[x]][1] != x; }
-  void pushdown(int x) {
+  void pushdown(int x) { // 下推翻转标记到左右儿子
     if (rev[x] == 0) return;
     int lx = ch[x][0], rx = ch[x][1];
     if (lx) swap(ch[lx][0], ch[lx][1]), rev[lx] ^= 1;
     if (rx) swap(ch[rx][0], ch[rx][1]), rev[rx] ^= 1;
     rev[x] = 0;
   }
-  void pushup(int x) {
+  void pushup(int x) { // 从x向根递归下推所有懒标记
     if (!is_root(x)) pushup(fa[x]);
     pushdown(x);
   }
-  void rotate_up(int x) {  // 将x向上旋转一级
+  void rotate_up(int x) {  // Splay旋转：将x向上旋转一级
     int y = fa[x], z = fa[y], chx = is_right_ch(x), chy = is_right_ch(y),
-        &t = ch[x][chx ^ 1];  // t在x,y之间，但是t-x, x-y方向相反
+        &t = ch[x][chx ^ 1]; // t在x和y之间，方向与x-y相反
     fa[x] = z;
-    if (!is_root(y)) ch[z][chy] = x;              // x,y在z的同一侧
-    ch[y][chx] = t, fa[t] = y, t = y, fa[y] = x;  // 保证t依然在x,y之间
+    if (!is_root(y)) ch[z][chy] = x;              // x和y在z的同一侧
+    ch[y][chx] = t, fa[t] = y, t = y, fa[y] = x;  // 保证t仍在x和y之间
   }
-  void splay(int x) {
-    pushup(x);  // x一直到树根路径上所有点的深度相对关系都要反转
+  void splay(int x) { // 将x旋转为辅助树的根
+    pushup(x);  // 先下推从根到x的所有翻转标记
     for (int f = fa[x]; f = fa[x], !is_root(x); rotate_up(x))
       if (!is_root(f)) rotate_up(is_right_ch(x) == is_right_ch(f) ? f : x);
   }
-  void access(int x) {  // 将root-x变成首选边
+  void access(int x) {  // 将根到x的路径变为首选边（实链）
     for (int f = 0; x; f = x, x = fa[x]) splay(x), ch[x][1] = f;
   }
-  void make_root(int x) {  // 将x变为树根
+  void make_root(int x) {  // 将x变为所在原树的根（翻转整条路径）
     access(x), splay(x), swap(ch[x][0], ch[x][1]), rev[x] ^= 1;
   }
-  void split(int x, int y) { make_root(x), access(y), splay(y); }
-  int find_root(int x) {  // x所在树的树根
+  void split(int x, int y) { make_root(x), access(y), splay(y); } // 将x-y路径提取到一棵Splay中
+  int find_root(int x) {  // 寻找x所在原树的根
     access(x), splay(x);
-    while (ch[x][0]) x = ch[x][0];
+    while (ch[x][0]) x = ch[x][0]; // 沿左子树走到最深处
     splay(x);
     return x;
   }
   void cut(int x, int y) {
-    split(x, y);  // x是y在辅助树中的左孩子且要求x,y相邻
-    if (ch[y][0] == x && !ch[x][1]) ch[y][0] = fa[x] = 0;
+    split(x, y);  // 将x变为根，提取x-y路径到y的Splay
+    if (ch[y][0] == x && !ch[x][1]) ch[y][0] = fa[x] = 0; // 确认x和y直接相邻后断开
   }
-
   void link(int x, int y) {
-    if (find_root(x) != find_root(y)) make_root(x), fa[x] = y;
+    if (find_root(x) != find_root(y)) make_root(x), fa[x] = y; // 先判断不连通再连边
   }
 };
 LCT<NN> st;
@@ -312,6 +427,27 @@ int main() {
 ```
 
 ## 例题42  快乐涂色（Happy Painting, UVa11994）
+
+### 题目描述
+给定一棵有根树（每个节点有一个父节点），每条边有一个初始颜色（用整数表示）。需要处理M个操作：
+- `1 x y c`：将节点x的父边重新连接到节点y，并将这条边的颜色设为c。（如果x == y则忽略）
+- `2 x y c`：将x到y路径上所有边的颜色都改为c。
+- `3 x y`：查询x到y路径上有多少条边，以及有多少种不同的颜色。
+N, M ≤ 10^5。
+
+### 解题思路
+1. **LCT维护边权**：将每条边的颜色信息挂在该边较深的那个节点上（clr[x] = 边(fa[x], x)的颜色）。这样路径查询时，路径上的每个节点（除LCA外）都携带一条边的颜色。
+2. **颜色集合**：用位运算（bitmask）维护颜色集合，因为颜色种类有限。set[x]存储x所在Splay子树中所有边的颜色集合的位或。
+3. **路径染色（paint）**：split(x, y)后，在y的Splay根节点上打lazy标记（mark[y] = c），同时set[y] = 1 << c。
+4. **cut/link操作**：cut(x)操作是access(x) + splay(x)，然后断开x和其左子树（即x在原树中的父亲）的连接。link(x, y, c)先cut(x)，然后fa[x] = y, clr[x] = c。
+5. **查询（query）**：split(x, y)后，从set[y]中统计不同颜色的位数（有多少个1），size[y]-1为路径边数。
+
+### 算法方法
+**LCT（Link-Cut Tree）维护边权 + 位运算颜色压缩**。边权挂在子节点上，用位运算压缩颜色集合，支持路径染色、重新连边和路径颜色统计。
+
+### 复杂度分析
+- **时间复杂度**：O(M log N)。每次LCT操作O(log N)。
+- **空间复杂度**：O(N)，每个节点存储ch[2], fa, rev, size, clr, set, mark。
 
 ```cpp
 // 例题42  快乐涂色（Happy Painting, UVa11994）

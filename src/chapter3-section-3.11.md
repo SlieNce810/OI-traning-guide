@@ -2,6 +2,23 @@
 
 ## 例题55  树上异或（Tree, ACM/ICPC 2013南京在线赛, HDU4757）
 
+### 题目描述
+给定一棵N个节点的树，每个节点有一个权值A[i]（0 ≤ A[i] < 2^16）。有M个查询，每个查询给出(u, v, x)，求节点u到v的路径上选择一个节点z，使得 `A[z] XOR x` 的值最大，输出该最大值。N, M ≤ 10^5。
+
+### 解题思路
+1. **可持久化Trie**：构建从根到每个节点的可持久化Trie，Ver[u]是根节点到节点u路径上所有节点权值的二进制字典树（Trie）版本。
+2. **树上路径Trie表示**：路径(u, v)上的权值集合对应的Trie可以通过可持久化Trie的差分得到：`Trie(u) + Trie(v) - Trie(lca) - Trie(fa(lca))`。
+3. **Trie插入**：从高位（第15位）到低位逐位插入。每个新版本在旧版本基础上新建一条路径，共享未修改的子树。每个节点维护cnt表示该子树中数的个数。
+4. **查询最大异或**：从最高位开始贪心——如果与当前位相反的位所对应的子树中存在非零cnt（通过 `cnt[lu.ch[!f]] + cnt[lv.ch[!f]] - cnt[ld.ch[!f]] - cnt[lf.ch[!f]] > 0` 判断），则走相反位置，贡献1<<i到答案；否则走相同位置。
+5. **LCA预处理**：用倍增法预处理LCA以快速找到路径端点的祖先。
+
+### 算法方法
+**可持久化Trie（Persistent Trie）+ 倍增LCA**。构建从根到每个节点的可持久化Trie，用差分思想表示路径上的集合，在Trie上贪心查询最大异或值。
+
+### 复杂度分析
+- **时间复杂度**：O((N+M) log MAXA)。每个Trie节点插入O(log MAXA)=16，每次查询O(log MAXA)。
+- **空间复杂度**：O(N log MAXA)，Trie节点总数≈N*16=1.6M。
+
 ```cpp
 // 例题55  树上异或（Tree, ACM/ICPC 2013南京在线赛, HDU4757）
 // 陈锋
@@ -74,6 +91,26 @@ int main() {
 ```
 
 ## 例题56  网格监控（Grid surveillance, IPSC 2011）
+
+### 题目描述
+在一个DIM x DIM（DIM=4096）的网格上进行在线操作。所有操作重复R轮，每轮依次执行Q个操作。操作分为两种：
+- 类型1（加点）：在坐标(x,y)处添加一个值为v的点。坐标由前一操作的返回值c异或计算得到：`x = (x XOR c) % 4096 + 3`。
+- 类型2（查询）：查询矩形(x1,y1)-(x2,y2)内的所有点的值之和。如果v=0则查询当前最新版本的区间和；如果v>0则查询第v个版本的区间和；如果v<0则查询从当前版本往回数|v|个版本的区间和。
+所有操作共用全局版本号，每执行一次类型1操作版本号+1。
+
+### 解题思路
+1. **可持久化二维BIT**：二维BIT的每个位置C[i][j]维护一个vector<{version, cumulative_sum}>，每个版本在该位置记录累积和。使用版本号作为时间戳。
+2. **更新操作**：每次更新时版本号+1，在二维BIT的路径上（lowbit迭代），每个C[i][j]的vector追加一个新的{version, cumulative_sum}对。
+3. **查询操作**：在指定版本ver下查询前缀和。对于每个BIT路径上的C[i][j]，用lower_bound找到版本号≤ver的最近记录，取其累积和。
+4. **矩形查询**：标准二维前缀和差分——`sum(xr, yr) - sum(xl-1, yr) - sum(xr, yl-1) + sum(xl-1, yl-1)`。
+5. **输出优化**：结果不需要全部输出，只需从第qi+20000个结果开始输出（防止输出过多）。
+
+### 算法方法
+**可持久化二维BIT（版本化树状数组）**。每个BIT节点维护版本号有序序列和前缀累积和，支持任意历史版本的二维区间求和。
+
+### 复杂度分析
+- **时间复杂度**：每次更新O(log² DIM)，每次查询O(log² DIM * log V)（log V为版本二分查找开销）。总复杂度与操作数和轮数相关。
+- **空间复杂度**：O(N * log² DIM)，每个更新在O(log² DIM)个BIT节点上追加记录。
 
 ```cpp
 // 例题56  网格监控（Grid surveillance, IPSC 2011）
@@ -169,6 +206,23 @@ int main() {
 ```
 
 ## 例题54  树上计数（Count on a tree, SPOJ COT）
+
+### 题目描述
+给定一棵N个节点的树，每个节点有一个权值W[i]。有M个查询，每个查询给出(u, v, k)，求节点u到v的路径上第k小的节点权值是多少。N ≤ 10^5, M ≤ 10^5。
+
+### 解题思路
+1. **可持久化权值线段树（主席树）**：从根节点开始DFS，每个节点在其父节点版本的权值线段树基础上插入自己的权值W[u]，形成可持久化线段树版本链。Ver[u] = 根到u路径上所有节点的权值线段树。
+2. **树上路径线段树**：路径(u,v)上的权值集合对应的线段树可以通过差分得到：`Tree(u) + Tree(v) - Tree(lca) - Tree(fa(lca))`。在四棵线段树上同时进行二分查找。
+3. **查询过程**：在区间[l, r)（离散化后的权值范围）上，计算左子树的元素个数 count = `pu->left->count + pv->left->count - pd->left->count - ppd->left->count`。如果count >= k，递归到左子树；否则k -= count，递归到右子树。
+4. **离散化**：将节点权值离散化到[0, maxw)范围，RM数组记录每个离散值对应的原始权值。
+5. **LCA预处理**：用倍增法预处理LCA和Tin/Tout时间戳。
+
+### 算法方法
+**可持久化线段树（主席树）+ 倍增LCA + 离散化**。构造树上路径的权值线段树，通过在四棵线段树上同时二分来查询路径上第k小的权值。
+
+### 复杂度分析
+- **时间复杂度**：O(N log N + M log N)。主席树构建O(N log N)，每次查询O(log N)。
+- **空间复杂度**：O(N log N)，主席树节点数约N*log(N)，每个版本新建O(log N)个节点。
 
 ```cpp
 // 例题54  树上计数（Count on a tree, SPOJ COT）
@@ -266,6 +320,23 @@ int main() {
 
 ## 例题53  区间第K小查询（K-th Number, SPOJ MKTHNUM）
 
+### 题目描述
+给定一个长度为N的整数序列A[1..N]和M个查询，每个查询给出(l, r, k)，输出区间A[l..r]中第k小的数。N ≤ 10^5, M ≤ 5000。
+
+### 解题思路
+1. **可持久化权值线段树（主席树）**：第i个版本的线段树存储了前i个元素（A[1..i]）在值域[0, maxa)上的分布情况。每个节点记录该值域区间内元素的出现次数count。
+2. **版本差分**：区间[l, r]的权值分布 = VER[r] - VER[l-1]（两棵线段树的对应节点count相减）。
+3. **二分查找**：从根节点开始，在值域[l, mid)上查找。计算左子树的元素个数count = `a->left->count - b->left->count`。如果count >= k，则第k小的数在左子树；否则k -= count，递归到右子树。
+4. **持久化机制**：插入新值时，沿着从根到叶子的路径创建新的节点（路径长度O(log maxa)），路径之外共享旧版本的节点。每个版本的新增节点数 = O(log maxa)。
+5. **离散化**：将原始序列值映射到[0, maxa)的紧凑区间，查询结果通过RM数组反查原始值。
+
+### 算法方法
+**可持久化线段树（主席树 / Persistent Segment Tree）+ 离散化**。每个前缀构建一棵权值线段树，通过版本差分实现区间查询第k小。
+
+### 复杂度分析
+- **时间复杂度**：O(N log N + M log N)。建树O(N log N)，每次查询O(log N)。
+- **空间复杂度**：O(N log N)，主席树节点总数约N*log(N)。
+
 ```cpp
 // 例题53  区间第K小查询（K-th Number, SPOJ MKTHNUM）
 // 陈锋
@@ -301,31 +372,68 @@ int query(PNode a, PNode b, int l, int r, int k) {  // 二分查找逻辑
   return query(a->right, b->right, m, r, k - count);
 }
 
-int A[MAXN], RM[MAXN];  // 离散化
-PNode VER[MAXN];
+int A[MAXN], RM[MAXN];  // A:原始数组, RM:离散值到原始值的映射
+PNode VER[MAXN]; // VER[i]：前i个元素的权值线段树版本（根节点指针）
 int main() {
   ios::sync_with_stdio(false), cin.tie(0);
-  Null->left = Null->right = Null;
+  Null->left = Null->right = Null; // 空节点初始化（左右儿子都指向自己）
   int n, m, maxa = 0;
   cin >> n >> m;
   map<int, int> M;
-  _for(i, 0, n) cin >> A[i], M[A[i]] = 0;
+  _for(i, 0, n) cin >> A[i], M[A[i]] = 0; // 统计所有出现过的值
   for (map<int, int>::iterator p = M.begin(); p != M.end(); p++)
-    p->second = maxa, RM[maxa] = p->first, maxa++;
-  VER[0] = Null;
-  _for(i, 0, n)  // 权值线段树
-      VER[i + 1] = VER[i]->insert(0, maxa, M[A[i]]);
+    p->second = maxa, RM[maxa] = p->first, maxa++; // 离散化：分配连续的id
+  VER[0] = Null; // 空版本的根节点
+  _for(i, 0, n)  // 依次插入每个元素，构建可持久化线段树
+      VER[i + 1] = VER[i]->insert(0, maxa, M[A[i]]); // 在前一版本基础上插入
 
   for (int i = 0, u, v, k; i < m; i++) {
     cin >> u >> v >> k;
+    // 版本差分：VER[v]减去VER[u-1]得到区间[u,v]的权值线段树
     int ans = query(VER[v], VER[u - 1], 0, maxa, k);
-    cout << RM[ans] << endl;
+    cout << RM[ans] << endl; // 映射回原始权值
   }
 }
 // Accepted 1480ms 33792kB 1578 C++(g++ 4.3.2)2020-12-13 23:19:23 27090723
 ```
 
 ## 例题57  自带版本控制功能的IDE（Version Controlled IDE, ACM/ICPC Hatyai 2012, UVa12538）
+
+### 题目描述
+你需要实现一个自带版本控制的文本编辑器（IDE）。支持三种操作：
+- `1 p s`：在当前版本的第p个字符后插入字符串s，生成新版本。
+- `2 p c`：在当前版本中删除从第p个字符开始的c个字符，生成新版本。
+- `3 v p c`：查询第v个版本中从第p个字符开始的c个字符，输出到屏幕。
+
+所有位置参数p和c都需要减去一个偏移量d，d为迄今所有类型3操作输出的字符'c'的总数（用于加密/纠偏）。N ≤ 50000（操作数）。
+
+### 解题思路（可持久化Treap版本）
+1. **可持久化Treap**：Treap（随机平衡二叉搜索树）的每个节点有随机key保证期望平衡。通过copyOf在修改时复制节点，实现结构共享的可持久化。
+2. **核心操作**：
+   - `split(pn, l, r, k)`：将Treap按前k个元素分裂为左右两棵子树。
+   - `merge(a, b)`：合并两棵Treap（a中所有元素在b前）。
+   - `insert(ver, pos, s)`：先split在pos处分裂，然后合并左子树+新字符串Treap+右子树。
+   - `remove(ver, pos, n)`：两次split取出要删除的区间，merge首尾。
+3. **版本管理**：VER[i]存储第i个版本的Treap根节点指针。每次修改操作返回新版本并ver++。
+4. **持久化机制**：merge和split在修改节点时先copyOf创建副本再修改，旧版本不受影响。节点从预分配的数组Nodes中分配。
+
+### 解题思路（rope版本）
+1. **C++ STL rope**：GCC扩展库`__gnu_cxx::crope`提供了可持久化字符串——一种基于平衡树的字符串实现。
+2. **自动持久化**：`crope`的赋值操作`version[ver++] = ro`自动复制了一份快照，后续修改不影响之前的版本。
+3. **简洁操作**：`ro.insert(p, buf)`插入字符串，`ro.erase(p-1, c)`删除区间，`version[v].substr(p-1, c)`查询子串。
+
+### 算法方法
+**方法一**：**可持久化Treap（Persistent Treap）**，通过copy-on-write实现版本化，支持O(log N)的插入、删除和区间操作。
+
+**方法二**：**GCC rope（可持久化平衡树字符串）**，利用STL内置的可持久化数据结构简化实现。
+
+### 复杂度分析
+- **Treap版本**：
+  - 时间复杂度：每次操作O(log N)。split/merge路径长度O(log N)，每个节点copyOf O(1)。
+  - 空间复杂度：O(N log N)，每次修改新建O(log N)个节点。
+- **rope版本**：
+  - 时间复杂度：每次操作均摊O(log N)。
+  - 空间复杂度：O(N log N)。
 
 ```cpp
 // 例题57  自带版本控制功能的IDE（Version Controlled IDE, ACM/ICPC Hatyai 2012, UVa12538）
@@ -444,11 +552,24 @@ int main() {
 // Accepted 280ms 3205 C++5.3.0 2020-12-13 23:23:21 25844155
 ```
 
-## 例题57  自带版本控制功能的IDE（Version Controlled IDE, ACM/ICPC Hatyai 2012, UVa12538）
+## 例题57  自带版本控制功能的IDE（rope实现版本）
+
+### 题目描述
+（同上题，使用C++ GCC扩展库rope的更简洁实现。）
+
+### 解题思路
+使用`__gnu_cxx::crope`（可持久化字符串rope），它是GCC STL扩展中基于平衡树的可持久化字符串类型。每次对rope的修改操作都自动创建新版本（通过赋值和快照机制），版本通过`version[ver++] = ro`保存。插入使用`ro.insert(p, buf)`，删除使用`ro.erase(p-1, c)`，子串查询使用`version[v].substr(p-1, c)`获得。
+
+### 算法方法
+**GCC crope（可持久化平衡树字符串）**。利用STL内置rope数据结构的自动持久化特性。
+
+### 复杂度分析
+- **时间复杂度**：每次操作均摊O(log N)。
+- **空间复杂度**：O(N log N)，rope内部自动管理版本节点的存储。
 
 ```cpp
 // 例题57  自带版本控制功能的IDE（Version Controlled IDE, ACM/ICPC Hatyai 2012, UVa12538）
-// 陈锋
+// rope实现版本
 #include <bits/stdc++.h>
 
 #include <ext/rope>

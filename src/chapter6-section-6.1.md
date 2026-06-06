@@ -1,10 +1,46 @@
 # 6.1 轮廓线动态规划
 
+轮廓线动态规划（Profile DP / Plug DP）是一类基于连通性的状态压缩动态规划，常用于解决网格上的连通性问题（如哈密顿回路、路径覆盖、着色连通性等）。核心思想是逐格处理，状态编码当前"轮廓线"（已处理区域与未处理区域的分界线）上的信息，通过转移方程逐步推进。
+
 ## LA3620 Manhattan Wiring
+
+### 题目描述
+在一个n×m（n,m ≤ 9）的网格中，包含以下类型的格子：
+- **数字2**：恰好有两个，需要用线连接这两个2
+- **数字3**：恰好有两个，需要用线连接这两个3
+- **空格（0）**：可以走线也可以不走线
+- **障碍格（1）**：不能走线
+
+线只能沿网格线走（即从一个格子边界到相邻边界），不能分叉，不能相交。同一个格子内线可以拐弯。求将两个2和两个3分别连通的最短总路径长度。
+
+### 解题思路
+使用轮廓线动态规划来解决网格上的多线布线问题。逐格进行DP，记录轮廓线上方每个位置是否有插头以及插头属于哪条线（0=无插头，1=连接2的线，2=连接3的线）。
+
+转移时枚举当前格子内的连线方式：
+- **空格/障碍格（值≤1）**：可以选择不连线（整个格子空着），或者如果是空格（值为0）则可以选择在格子内走线（连接格子的两个相邻边界，共6种排列：上下、上左、上右、下左、下右、左右）。
+- **数字格（值为2或3）**：必须在数字和某个相邻边界之间连接（4种情况：上、下、左、右各放一段线）。
+
+每段线在格子内的长度为0（拐弯）/1（连接数字到边界）/2（通过格子连接两个边界），最终答案需要除以2（因为每条线段被计算了两次）。
+
+### 算法方法
+**轮廓线动态规划（Plug DP）** + **记忆化搜索**：
+1. **状态编码**：使用三进制编码，每个插头3种状态，最多9列即3^9=19683种状态
+2. **逐格转移**：按"格"为单位（而非"行"）进行DP，使用`rec(row, col, state)`进行记忆化搜索
+3. **状态转移验证**：`State::next()`方法自动验证转移的合法性（边界条件、插头匹配）
+
+核心数据结构`State`：
+- `up[0..m-1]`：轮廓线上方各列插头状态（三进制的一位）
+- `left`：当前格子左侧插头状态
+- `encode()`：将状态编码为整数作为DP的key
+
+### 复杂度分析
+- **时间复杂度**：O(n×m×3^m)，其中n,m ≤ 9，3^9 = 19683。每个格子枚举转移方式（最多7种），总复杂度约9×9×19683×7 ≈ 1.1×10^7
+- **空间复杂度**：O(n×m×3^m)，memo数组大小为9×9×59049 ≈ 4.8×10^6个int值，约19MB。本题使用int memo[9][9][59049]，其中59049 = 3^10预留空间
 
 ```cpp
 // LA3620 Manhattan Wiring
 // Rujia Liu
+// 题目：曼哈顿布线 - 在网格中用最短的非相交线连接两对数字（2和3）
 #include<cstdio>
 #include<cstring>
 #include<algorithm>
@@ -12,71 +48,94 @@ using namespace std;
 
 const int INF = 100000000;
 
-int nrows, ncols;
-int G[10][10];
+int nrows, ncols;    // 网格的行数和列数
+int G[10][10];       // 网格内容：0=空格, 1=障碍, 2/3=需要连接的数字
 
-// 插头编号：0表示无插头，1表示和数字2连通，2表示和数字3连通
+// 插头编号语义：
+// 0：该位置没有插头（无线经过）
+// 1：该位置有连接数字2的线经过
+// 2：该位置有连接数字3的线经过
 
 struct State {
-  int up[9]; // up[i](0<=i<m)表示第i列处轮廓线上方的插头编号
-  int left; // 当前格（即下一个要放置的方格）左侧的插头
+  int up[9];  // up[i](0<=i<m)表示第i列处轮廓线上方的插头编号
+  int left;   // 当前格（即下一个要放置的方格）左侧的插头
 
-  // 三进制编码
+  // 将状态编码为三进制整数，用于记忆化搜索的key
+  // 编码顺序：left为最高位，然后依次是up[0], up[1], ..., up[m-1]
   int encode() const {
     int key = left;
     for(int i = 0; i < ncols; i++) key = key * 3 + up[i];
     return key;
   }
 
-  // 在(row,col)处放一个新方格。UDLR分别为该方格上下左右四个边界上的插头编号
-  // 产生的新状态存放在T里，成功返回true，失败返回false
+  // 在当前格子(row,col)处尝试放置连线
+  // U/D/L/R 分别表示该方格上、下、左、右四个边界上的插头编号（0/1/2）
+  // 产生的新状态存放在T里
+  // 返回值：true表示该转移合法，false表示不合法
   bool next(int row, int col, int U, int D, int L, int R, State& T) const {
-    if(row == nrows - 1 && D != 0) return false; // 最下行下方不能有插头
-    if(col == ncols - 1 && R != 0) return false; // 最右列右边不能有插头
+    // 边界约束：最下行下方不能有向下的插头
+    if(row == nrows - 1 && D != 0) return false;
+    // 边界约束：最右列右边不能有向右的插头
+    if(col == ncols - 1 && R != 0) return false;
 
-    int must_left = (col > 0 && left != 0); // 是否必须要有左插头
-    int must_up = (row > 0 && up[col] != 0); // 是否必须要有上插头
+    // 检查是否需要匹配已有的左插头（非第一列且当前状态有左插头）
+    int must_left = (col > 0 && left != 0);
+    // 检查是否需要匹配已有的上插头（非第一行且轮廓线上对应列有上插头）
+    int must_up = (row > 0 && up[col] != 0);
 
-    if((must_left && L != left) || (!must_left && L != 0)) return false; // 左插头不匹配
-    if((must_up && U != up[col]) || (!must_up && U != 0)) return false; // 上插头不匹配
-    if(must_left && must_up && left != up[col]) return false; // 若左插头和上插头都存在，二者必须匹配
+    // 验证左插头：需要左插头时L必须匹配left；不需要时L必须为0
+    if((must_left && L != left) || (!must_left && L != 0)) return false;
+    // 验证上插头：需要上插头时U必须匹配up[col]；不需要时U必须为0
+    if((must_up && U != up[col]) || (!must_up && U != 0)) return false;
+    // 如果同时存在左插头和上插头，二者必须是同一条线（编号相同）
+    if(must_left && must_up && left != up[col]) return false;
 
-    // 产生新状态。实际上只有当前列的下插头和left插头有变化
+    // 生成新状态：大部分列的插头保持不变
     for(int i = 0; i < ncols; i++) T.up[i] = up[i];
+    // 只有当前列的下插头（变为D）和left插头（变为R）可能改变
     T.up[col] = D;
     T.left = R;
     return true;
   }
 };
 
-int memo[9][9][59049]; // 3^10
+int memo[9][9][59049]; // 记忆化数组，第三维大小为3^10=59049
 
-// 当前要放置格子(row, col)，状态为S。返回最小总长度
+// 递归DP函数：当前处理格子(row, col)，轮廓线状态为S
+// 返回值：从当前状态到终态的最小总路径长度
 int rec(int row, int col, const State& S) {
+  // 换行处理：当前行处理完毕后，移动到下一行第一列
   if(col == ncols) { col = 0; row++; }
+  // 递归边界：所有行处理完毕
   if(row == nrows) return 0;
 
+  // 记忆化查表
   int key = S.encode();
   int& res = memo[row][col][key];
-  if(res >= 0) return res;
-  res = INF;
+  if(res >= 0) return res;  // 已计算过，直接返回
+  res = INF;                // 初始化为无穷大
 
   State T;
   if(G[row][col] <= 1) { // 空格（0）或者障碍格（1）
-    if(S.next(row, col, 0, 0, 0, 0, T)) res = min(res, rec(row, col+1, T)); // 整个格子里都不连线
-    if(G[row][col] == 0) // 如果是空格，可以连线。由于线不能分叉，所以这条线一定连接格子的某两个边界（6种情况）
-      for(int t = 1; t <= 2; t++) { // 枚举线的种类。t=1表示2线，t=2表示3线
-        if(S.next(row, col, t, t, 0, 0, T)) res = min(res, rec(row, col+1, T) + 2); // 上<->下
-        if(S.next(row, col, t, 0, t, 0, T)) res = min(res, rec(row, col+1, T) + 2); // 上<->左
-        if(S.next(row, col, t, 0, 0, t, T)) res = min(res, rec(row, col+1, T) + 2); // 上<->右
-        if(S.next(row, col, 0, t, t, 0, T)) res = min(res, rec(row, col+1, T) + 2); // 下<->左
-        if(S.next(row, col, 0, t, 0, t, T)) res = min(res, rec(row, col+1, T) + 2); // 下<->右
-        if(S.next(row, col, 0, 0, t, t, T)) res = min(res, rec(row, col+1, T) + 2); // 左<->右
+    // 选项A：整个格子里都不连线（空格/障碍格均可）
+    if(S.next(row, col, 0, 0, 0, 0, T)) res = min(res, rec(row, col+1, T));
+    
+    if(G[row][col] == 0) // 选项B：如果是空格，可以在格子内走线
+      // 由于线不能分叉，每条线一定连接格子的某两个边界（共6种组合）
+      for(int t = 1; t <= 2; t++) { // 枚举线的类型：t=1表示数字2的线，t=2表示数字3的线
+        // 6种连线方式，每种贡献2单位长度（进入+离开）
+        if(S.next(row, col, t, t, 0, 0, T)) res = min(res, rec(row, col+1, T) + 2); // 上↔下
+        if(S.next(row, col, t, 0, t, 0, T)) res = min(res, rec(row, col+1, T) + 2); // 上↔左
+        if(S.next(row, col, t, 0, 0, t, T)) res = min(res, rec(row, col+1, T) + 2); // 上↔右
+        if(S.next(row, col, 0, t, t, 0, T)) res = min(res, rec(row, col+1, T) + 2); // 下↔左
+        if(S.next(row, col, 0, t, 0, t, T)) res = min(res, rec(row, col+1, T) + 2); // 下↔右
+        if(S.next(row, col, 0, 0, t, t, T)) res = min(res, rec(row, col+1, T) + 2); // 左↔右
       }
   }
-  else {
-    int t = G[row][col] - 1; // 数字为2和3，但插头类型是1和2，所以要减1
-    // 由于线不能分叉，所以这条线一定连接格子中间的数字和某一个边界（4种情况）
+  else { // 数字格：值为2或3（每种恰好两个）
+    // 插头类型 = 数字值 - 1（数字2→插头1, 数字3→插头2）
+    int t = G[row][col] - 1;
+    // 数字格必须连接数字位置到某个边界（4种情况），贡献1单位长度
     if(S.next(row, col, t, 0, 0, 0, T)) res = min(res, rec(row, col+1, T) + 1); // 从上边界出来
     if(S.next(row, col, 0, t, 0, 0, T)) res = min(res, rec(row, col+1, T) + 1); // 从下边界出来
     if(S.next(row, col, 0, 0, t, 0, T)) res = min(res, rec(row, col+1, T) + 1); // 从左边界出来
@@ -86,15 +145,21 @@ int rec(int row, int col, const State& S) {
 }
 
 int main() {
+  // 循环读入多组数据，直到遇到0 0
   while(scanf("%d%d", &nrows, &ncols) == 2 && nrows && ncols) {
+    // 读入网格
     for(int i = 0; i < nrows; i++)
       for(int j = 0; j < ncols; j++)
         scanf("%d", &G[i][j]);
+    // 初始化初始状态：轮廓线上没有任何插头
     State S;
     memset(&S, 0, sizeof(S));
+    // 初始化记忆化数组（-1表示未计算）
     memset(memo, -1, sizeof(memo));
-    int ans = rec(0, 0, S);
+    int ans = rec(0, 0, S);  // 从(0,0)开始DP
+    // 无解时INF不会被更新，输出0
     if(ans == INF) ans = 0;
+    // 每条线被两端各算了一次，总长度要除以2
     printf("%d\n", ans/2);
   }
   return 0;
@@ -104,9 +169,44 @@ int main() {
 
 ## UVa10572 Black and White
 
+### 题目描述
+给定一个n×m（n,m ≤ 8）的网格，部分格子已经预先涂色（黑色'#'或白色'o'），其余格子需要填充黑色或白色。要求满足以下条件：
+1. 每个同色连通分量（上下左右相邻）必须是全连通且恰好一个
+2. 不存在2×2的全黑或全白子网格（即不能有2×2的同色方块）
+
+求：
+1. 满足条件的填充方案总数
+2. 输出其中一种合法的填充方案
+
+### 解题思路
+使用轮廓线动态规划处理网格着色与连通性问题。状态包含三部分信息：
+1. **颜色信息**：轮廓线上各列当前格子的颜色
+2. **连通性信息**：各列格子所属的连通分量编号
+3. **左上角颜色**：用于检测2×2同色子网格
+
+转移时枚举当前格子涂黑色或白色：
+- 检查是否与输入约束矛盾
+- 检查是否形成2×2同色子网格（当前格+左格+上格+左上格）
+- 更新连通分量：若与左/上格同色则合并
+- 检测上方孤立连通分量的消失：若上格颜色与当前格不同，且上方该颜色的连通分量是最后一个，则后续必须强制涂该颜色
+
+### 算法方法
+**轮廓线动态规划 + 最小表示法**：
+1. **状态编码**：用key = color[i]*8 + comp[i]的方式将轮廓线信息编码为32位无符号整数
+2. **连通分量管理**：使用并查集维护轮廓线上各列的连通关系，通过`normalize()`压缩为最小表示
+3. **强制涂色**：当某个颜色的最后一个连通分量即将消失时，后续所有格子必须涂该颜色（通过force_color参数传递）
+4. **记忆化**：使用`map<unsigned, int> memo[row][col][up_left]`进行三参数记忆化
+
+关键技巧：左上方格子的颜色仅在左右和上下颜色都相同时才影响状态（用于判断2×2同色方块），其余情况统一设为0以减少状态数。
+
+### 复杂度分析
+- **时间复杂度**：O(n×m×状态数×2)。状态数为轮廓线上颜色+连通分量的组合数，最多约数千种。n,m ≤ 8，总体可行
+- **空间复杂度**：O(n×m×2×状态数)。使用map存储DP状态值
+
 ```cpp
 // UVa10572 Black and White
 // Rujia Liu
+// 题目：黑白染色 - 填充网格为黑白两色，满足同色连通分量唯一且无2x2同色块
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -114,39 +214,42 @@ int main() {
 #include <map>
 using namespace std;
 
-int nrows, ncols, has_sol;
-char partial[8][9]; // 输入网格
-char grid[8][8], sol[8][8]; // 当前正在填的网格和解网格
+int nrows, ncols, has_sol;               // has_sol: 是否已找到至少一个合法解
+char partial[8][9];                       // 输入网格（含预着色，含结束符\0）
+char grid[8][8], sol[8][8];              // grid: 当前正在填充的网格; sol: 第一个合法解的记录
 
 struct State {
-  char color[8];       // 各列格子颜色
-  char up_left;        // 左上方格子颜色（用来判断是否出现2x2同色子网格）
-  char comp[8];        // 各格子连通分量
-  char ncomp;          // 连通分量总数
-  char ncolor_comp[2]; // 白连通分量个数和黑连通分量个数
+  char color[8];        // 轮廓线上方各列格子的颜色：0=白, 1=黑
+  char up_left;         // 左上方格子（即(row-1,col-1)）的颜色，用于检测2×2同色子网格
+  char comp[8];         // 各列格子所属的连通分量编号
+  char ncomp;           // 连通分量的总数
+  char ncolor_comp[2];  // ncolor_comp[0]=白色连通分量个数, ncolor_comp[1]=黑色连通分量个数
 
-  // 计算状态的最小表示
+  // 将连通分量编号压缩为最小表示（0,1,2,...），便于比较和哈希
+  // 同时重新统计ncomp和ncolor_comp
   void normalize() {
-    int rep[10];
+    int rep[10];  // rep[旧编号] = 新编号
     memset(rep, -1, sizeof(rep));
     ncomp = ncolor_comp[0] = ncolor_comp[1] = 0;
     for (int i = 0; i < ncols; i++) {
       if (rep[comp[i]] < 0) {
+        // 首次遇到的编号，分配新的最小编号
         rep[comp[i]] = ncomp++;
-        ncolor_comp[color[i]]++;
+        ncolor_comp[color[i]]++;  // 该颜色的连通分量计数+1
       }
       comp[i] = rep[comp[i]];
     }
   }
 
-  // 把所有编号为b的连通分量改成a
+  // 合并两个连通分量：将所有编号为b的改为a
   void merge(int a, int b) {
     if (a == b) return;
     for (int i = 0; i < ncols; i++)
       if (comp[i] == b) comp[i] = a;
   }
 
-  // 正好不超过32位无符号整数范围
+  // 将状态编码为32位无符号整数（每位用4bit，即16进制）
+  // 编码格式：[(color*8+comp) for each col]，共ncols个4位值
   unsigned int encode() {
     unsigned int key = 0;
     for (int i = 0; i < ncols; i++)
@@ -155,18 +258,25 @@ struct State {
   }
 };
 
-// 动态规划所用状态值表。只记录了不强制涂色（即force_color<0）时的值
+// 动态规划记忆化表：memo[row][col][up_left][key] = 解的个数
+// key仅在force_color<0（不强制涂色）时使用
 map<unsigned, int> memo[8][8][2]; 
 
-const int ch[] = { 'o', '#' };
+const int ch[] = { 'o', '#' };  // ch[0]='o'白色, ch[1]='#'黑色
 
-// 当前要涂格子(row, col)，状态为S，必须涂force_color颜色。返回解的个数
+// 递归DP：当前处理格子(row,col)，轮廓线状态为S
+// force_color: -1表示无强制；0表示必须涂白色；1表示必须涂黑色
+// 返回值：从当前状态出发的合法解的个数
 int rec(int row, int col, State& S, int force_color) {
+  // 换行处理
   if (col == ncols) { col = 0; row++; }
-  S.normalize(); // 计算最小表示
+  S.normalize(); // 先压缩为最小表示
 
+  // 递归边界：所有行处理完成
   if (row == nrows) {
+    // 每种颜色只能有不超过一个连通分量（即恰好一个或零个）
     if (S.ncolor_comp[0] > 1 || S.ncolor_comp[1] > 1) return 0;
+    // 记录第一个合法解
     if (has_sol == 0) {
       has_sol = 1;
       for (int i = 0; i < nrows; i++)
@@ -176,11 +286,11 @@ int rec(int row, int col, State& S, int force_color) {
     return 1;
   }
 
-  // 如果左格子和上格子颜色不同，则左上方格子的颜色是无关紧要的，统一设为0，减少状态
+  // 状态简化：如果左格和上格颜色不同，左上格颜色对2×2检查无影响，统一设为0
   if (row > 0 && col > 0 && S.color[col] != S.color[col-1])
     S.up_left = 0;
 
-  // 只有不强制涂色（force_color<0）时key才有意义
+  // 记忆化查表（仅在force_color<0时有效）
   unsigned int key;
   if (force_color < 0) {
     key = S.encode();
@@ -190,31 +300,45 @@ int rec(int row, int col, State& S, int force_color) {
 
   int res = 0;
 
-  // 当前格子涂color这种颜色
+  // 枚举当前格子涂的颜色：0=白, 1=黑
   for(int color = 0; color < 2; color++) {
-    if (force_color == 1 - color) continue; // 和force_color矛盾
-    if (partial[row][col] == ch[1-color]) continue; // 和输入矛盾
-    if (row > 0 && col > 0 && S.color[col-1] == color && S.color[col] == color && S.up_left == color) continue; // 出现2x2同色子网格
+    // 剪枝1：与强制颜色冲突
+    if (force_color == 1 - color) continue;
+    // 剪枝2：与输入中预着色的颜色冲突
+    if (partial[row][col] == ch[1-color]) continue;
+    // 剪枝3：形成2×2同色子网格（当前格+左+上+左上颜色相同）
+    if (row > 0 && col > 0 && S.color[col-1] == color && S.color[col] == color && S.up_left == color) continue;
 
+    // 构造新状态T
     State T = S;
-    T.color[col] = color;
-    T.up_left = S.color[col];
-    T.comp[col] = (row > 0 && S.color[col] == color) ? S.comp[col] : S.ncomp; // 初始化新状态第col列的连通分量编号
-    if (col > 0 && T.color[col-1] == color) T.merge(T.comp[col-1], T.comp[col]); // 如果颜色和左格子相同，则设置为左格子的连通分量
+    T.color[col] = color;              // 更新当前列颜色
+    T.up_left = S.color[col];          // 新的左上角颜色 = 原来的上格颜色
+    // 初始化当前列的连通分量编号
+    // 如果上方格子同色，继承其连通分量；否则分配新编号
+    T.comp[col] = (row > 0 && S.color[col] == color) ? S.comp[col] : S.ncomp;
+    // 如果和左格子同色，合并连通分量
+    if (col > 0 && T.color[col-1] == color) T.merge(T.comp[col-1], T.comp[col]);
 
-    grid[row][col] = ch[color];
+    grid[row][col] = ch[color];  // 记录当前填充
 
-    if (row > 0 && S.color[col] == 1-color) { // 检查上方格子是否为独立连通分量      
-      if (find(T.comp, T.comp+ncols, S.comp[col]) == T.comp+ncols) { // 该连通分量已经消失
-        if (S.ncolor_comp[1-color] > 1 || row < nrows-2) continue; // 如果color还有其他连通分量存在，或者至少还有两行需要涂，则无法继续
-        res += rec(row, col+1, T, color); // 可以继续，但以后强制涂color
+    // 检查上方格子的连通分量是否即将消失
+    if (row > 0 && S.color[col] == 1-color) {
+      // 原始状态中上方格子颜色与当前颜色不同
+      // 检查上方格子的连通分量编号在T中是否还存在
+      if (find(T.comp, T.comp+ncols, S.comp[col]) == T.comp+ncols) { // 该连通分量已经完全消失
+        // 如果该颜色还有其他连通分量，或者至少还需要填两行，则不可行
+        if (S.ncolor_comp[1-color] > 1 || row < nrows-2) continue;
+        // 否则后续必须强制涂该颜色以完成唯一连通分量
+        res += rec(row, col+1, T, color);
         continue;
       }
     }
 
+    // 正常转移（不强制涂色）
     res += rec(row, col+1, T, force_color);
   }
 
+  // 记忆化存储
   if (force_color < 0)
     memo[row][col][S.up_left][key] = res;
   return res;
@@ -228,16 +352,19 @@ int main() {
     scanf("%d%d", &nrows, &ncols);
     for(int i = 0; i < nrows; i++) scanf("%s", partial[i]);
 
+    // 初始化：轮廓线上初始全0（白色，无连通分量）
     State S;
     memset(&S, 0, sizeof(S));
     S.normalize();
+    // 清空所有记忆化表
     for (int i = 0; i < 8; i++)
       for (int j = 0; j < 8; j++)
         for (int k = 0; k < 2; k++)
           memo[i][j][k].clear();
 
     has_sol = 0;
-    printf("%d\n", rec(0, 0, S, -1));
+    printf("%d\n", rec(0, 0, S, -1));  // force_color=-1: 无强制涂色
+    // 输出第一个合法解
     if (has_sol) {
       for (int i = 0; i < nrows; i++) {
         for (int j = 0; j < ncols; j++)
@@ -254,43 +381,98 @@ int main() {
 
 ## UVa11270 Tiling Dominoes
 
+### 题目描述
+用1×2的多米诺骨牌完全覆盖一个n×m的棋盘（n,m ≤ 10），求方案数。骨牌可以横放或竖放（不能斜放），每个格子恰好被一块骨牌覆盖。
+
+### 解题思路
+经典的轮廓线DP（状态压缩DP）问题。用二进制位表示轮廓线上方每个位置是否已被覆盖（1=已覆盖，0=未覆盖）。逐格处理，每个位置有三种转移方式：
+1. **不放**：当前格已被上方骨牌覆盖，跳过（对应轮廓线该位为1）
+2. **横放**：当前格和右边格一起被一块横放的骨牌覆盖（需要当前位和右位都为0）
+3. **竖放**：当前格和下方格一起被一块竖放的骨牌覆盖（需要当前位为0，且不是最后一行）
+
+使用滚动数组优化空间，O(n×m×2^m)递推求解。
+
+### 算法方法
+**轮廓线状态压缩DP（二进制轮廓线）**：
+- 状态定义：轮廓线上方各列的覆盖状态（二进制位，共2^m种）
+- 递推方式：逐格递推，使用滚动数组`d[2][1<<maxn]`
+- `up(a, b)`函数：从状态a转移到状态b（当b最高位为1时，说明该格被覆盖，可以进行转移）
+
+转移细节：
+- **默认转移**：`up(k, k<<1)` — 当前格已被上方覆盖
+- **竖放转移**：`up(k, (k<<1)^(1<<m)^1)` — 需要i>0（非首行）且当前格未被覆盖
+- **横放转移**：`up(k, (k<<1)^3)` — 需要j>0（非首列）且当前格未被覆盖
+
+升位运算说明：k<<1将轮廓线左移一位，最低位补0表示"下一格的初始状态"。
+
+### 复杂度分析
+- **时间复杂度**：O(n×m×2^m)，其中n,m ≤ 10。max(n,m)=10时，2^10=1024，总操作约10×10×1024×3 ≈ 3×10^5
+- **空间复杂度**：O(2^m + maxn^2)。滚动数组d[2][1<<maxn]约2×2048×8=32KB，memo数组约100×100×8=80KB
+
 ```cpp
 // UVa11270 Tiling Dominoes
 // 刘汝佳
+// 题目：多米诺骨牌覆盖 - 用1x2骨牌完全覆盖n×m棋盘，求方案数
 #include<cstdio>
 #include<cstring>
 #include<algorithm>
 using namespace std;
-int n, m, cur;
+
+int n, m, cur;  // cur: 当前使用的滚动数组下标（0或1）
 
 const int maxn = 15;
+// d[0/1][mask]: 滚动数组，d[cur][mask]表示当前阶段的方案数
 long long d[2][1<<maxn], memo[maxn*maxn][maxn*maxn];
 
+// 状态转移函数：从轮廓线状态a转移到状态b
+// a: 上一格处理后的轮廓线状态（二进制表示各列是否已覆盖）
+// b: 当前格处理后候选的新状态（左移一位后的表示）
+// 条件b的二进制最高位（第m位）为1时，说明该位置被覆盖，可以进行转移
 void up(int a, int b) {
-  if(b&(1<<m)) d[cur][b^(1<<m)] += d[1-cur][a];
+  if(b & (1<<m)) d[cur][b ^ (1<<m)] += d[1-cur][a];
+  // b^(1<<m): 将第m位清0（因为该位置已被处理，新轮廓线不需要它）
 }
 
+// 计算n×m棋盘的覆盖方案数
 long long solve(int n, int m) {
   memset(d, 0, sizeof(d));
   cur = 0;
+  // 初始状态：所有m列都被"虚拟"覆盖（即轮廓线上方认为全部透明/可自由放置）
   d[0][(1<<m)-1] = 1;
+  
+  // 逐行逐格递推
   for(int i = 0; i < n; i++)
-    for(int j = 0; j < m; j++) { // 枚举当前要算的阶段
-      cur ^= 1;
-      memset(d[cur], 0, sizeof(d[cur]));
-      for(int k = 0; k < (1<<m); k++) { // 枚举上个阶段的状态
-        up(k, k<<1);
-        if(i && !(k&(1<<m-1))) up(k, (k<<1)^(1<<m)^1);
-        if(j && !(k&1)) up(k, (k<<1)^3);
+    for(int j = 0; j < m; j++) { // 枚举当前要处理的格子
+      cur ^= 1;  // 切换滚动数组
+      memset(d[cur], 0, sizeof(d[cur]));  // 清零当前层
+      
+      for(int k = 0; k < (1<<m); k++) { // 枚举上一阶段的所有轮廓线状态
+        // 情况1：当前格已被上方竖放的骨牌覆盖（轮廓线该位=1），直接跳过
+        up(k, k << 1);
+        
+        // 情况2：竖放骨牌（当前格+b下方格）
+        // 条件：i>0（非首行）且当前格未覆盖(k的最高位为0)
+        // 新状态：(k<<1)设置当前格为已覆盖, 第0位和第m位各放一个1
+        if(i && !(k & (1<<m-1))) 
+          up(k, (k<<1) ^ (1<<m) ^ 1);
+        
+        // 情况3：横放骨牌（当前格+右边格）
+        // 条件：j>0（非首列）且当前格和右边格都未覆盖(k的最低两位为00)
+        // 新状态：(k<<1)的最低两位设置为11
+        if(j && !(k & 1)) 
+          up(k, (k<<1) ^ 3);  // 3 = 二进制11
       }
     }
+  // 最终状态：所有位置都被覆盖，轮廓线全1
   return d[cur][(1<<m)-1];
 }
 
 int main() {
-  memset(memo, -1, sizeof(memo));
+  memset(memo, -1, sizeof(memo));  // -1表示未计算
   while(scanf("%d%d", &n, &m) == 2) {
+    // 保证n>=m，减少状态数
     if(n < m) swap(n, m);
+    // 记忆化：相同(n,m)只需计算一次
     if(memo[n][m] < 0) memo[n][m] = solve(n, m);
     printf("%lld\n", memo[n][m]);
   }

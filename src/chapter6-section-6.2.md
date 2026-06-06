@@ -1,10 +1,45 @@
 # 6.2 嵌套和分块数据结构
 
+嵌套和分块数据结构是处理复杂查询的两类重要方法。嵌套数据结构将一种数据结构嵌入另一种中（如Fenwick树的每个节点是一棵树），分块则将数据分成若干块，每块内部预处理排序以加速查询。
+
 ## 「SCOI2005」王室联邦
+
+### 题目描述
+给定一棵N个节点的树和一个参数B，要求将树划分为若干"块"（每个节点恰好属于一个块），使得：
+1. 每个块的大小（节点数）在[B, 3B]之间
+2. 每个块的节点在原树中构成一个连通子图
+3. 每个块指定一个"省会"节点，块内每个节点到省会的路径上所有节点都必须属于该块
+4. 省会可以不在块内（即作为连接枢纽）
+
+输出：块的数量、每个节点所属的块编号、每个块对应的省会节点编号。
+
+### 解题思路
+此题是树上莫队（Mo's Algorithm on Tree）的预处理基础——将树分块以便后续处理树上路径查询。核心算法是DFS+栈的方式：
+
+1. 从根节点1开始DFS遍历整棵树
+2. 维护一个栈记录DFS过程中访问的节点顺序
+3. 每次进入一个子树前记录当前栈大小sz，递归处理子树后，如果栈的大小增加了至少B个，说明该子树中已积累了足够多的未分配节点
+4. 此时以当前节点u为省会，将栈中从sz位置之后的所有节点弹出一并归入一个新块
+5. DFS结束后，栈中剩余节点（包括根节点）归入以根为中心的最后一个块
+
+这样能保证每个块的大小恰好接近B（在[B, 2B)之间，最后一个块可能略大但≤3B）。
+
+### 算法方法
+**树上分块（DFS + 栈）**：
+- 利用DFS访问顺序的自然连续性保证块的连通性
+- 以B为阈值触发分块操作
+- 根节点的特殊处理：最后所有剩余节点归入以根为中心的块
+
+这种分块方法为"树上莫队"算法提供了基础——后续可以将树上路径查询转化为块间查询。
+
+### 复杂度分析
+- **时间复杂度**：O(N)，只需一次DFS遍历整棵树
+- **空间复杂度**：O(N)，邻接表存储树结构，栈最多存储N个节点
 
 ```cpp
 // 「SCOI2005」王室联邦
 // 陈锋
+// 题目：树上分块 - 将树划分为大小在[B,3B]之间的连通块
 #include <iostream>
 #include <stack>
 #include <vector>
@@ -12,35 +47,49 @@ using namespace std;
 
 typedef long long LL;
 const int NN = 1000 + 4;
-vector<int> G[NN];
-stack<int> S;
-int N, B, BCnt, BId[NN], Cap[NN];  //块的个数，每个点所属块编号，每个块的中心
+vector<int> G[NN];       // 邻接表存储树
+stack<int> S;            // DFS访问顺序栈
+int N, B;                // N=节点数, B=块大小参数
+int BCnt;                // 块的数量
+int BId[NN];             // BId[i] = 节点i所属的块编号
+int Cap[NN];             // Cap[i] = 第i个块的省会节点编号
 
+// 树上分块DFS
+// u: 当前访问节点, fa: 父节点
 void dfs(int u, int fa) {
-  size_t sz = S.size();
+  size_t sz = S.size();  // 进入子树前栈的大小（作为基准）
   for (auto v : G[u]) {
-    if (v == fa) continue;
+    if (v == fa) continue;  // 避免回到父节点
     dfs(v, u);
-    if (S.size() >= sz + B) {  //新增点可以分块
-      Cap[++BCnt] = u;         //新增块中心点为u
+    // 如果新增的未分配节点达到B个，就形成一个新块
+    if (S.size() >= sz + B) {
+      Cap[++BCnt] = u;      // 以当前节点u为新块的省会
+      // 将栈中基准点之后的所有节点弹出，归入新块
       while (S.size() > sz) BId[S.top()] = BCnt, S.pop();
     }
   }
-  S.push(u);
-  if (u == 1)  // root特殊处理，未分块的点都放入以root为中心的块
+  S.push(u);  // 将当前节点入栈（在上方，但尚未分配）
+  
+  // 根节点的特殊处理：剩余未分配节点全部归入以根为中心的块
+  if (u == 1)
     while (!S.empty()) BId[S.top()] = BCnt, S.pop();
 }
 
 int main() {
   ios::sync_with_stdio(false), cin.tie(nullptr);
   cin >> N >> B, BCnt = 0;
+  // 读入树的边
   for (int i = 1, u, v; i < N; i++) {
     cin >> u >> v;
     G[u].push_back(v), G[v].push_back(u);
   }
   dfs(1, -1);
+  
+  // 输出块的数量
   cout << BCnt << endl;
+  // 输出每个节点所属的块编号
   for (int i = 1; i <= N; i++) cout << BId[i] << (i == N ? "\n" : " ");
+  // 输出每个块的省会节点编号
   for (int i = 1; i <= BCnt; i++) cout << Cap[i] << (i == BCnt ? "\n" : " ");
   return 0;
 }
@@ -49,77 +98,121 @@ int main() {
 
 ## UVa11297 - Census
 
+### 题目描述
+维护一个n×n（n ≤ 500）的整数矩阵，支持两种操作：
+- `q x1 y1 x2 y2`：查询子矩阵[x1..x2][y1..y2]中的最大值和最小值
+- `c x y v`：将位置(x, y)的值修改为v
+
+多组数据，每组数据先输入n，然后输入n×n矩阵；接着输入m（操作次数），然后m行操作。
+
+### 解题思路
+这是一个二维RMQ（区间最值查询）带修改的问题。采用简化的二维线段树：
+- 对矩阵的每一行（x坐标），独立建立一棵一维线段树，维护该行各列区间的最大/最小值
+- 查询子矩阵时，遍历所有涉及的行（x1到x2），对每行在列区间[y1, y2]上进行线段树查询，汇总所有行的结果
+- 修改时，只更新对应行的线段树中对应列的值
+
+虽然是"二维"但没有使用真正的二维线段树嵌套，而是"多棵一维线段树"的方式，实现更简单但查询时需要遍历行。
+
+### 算法方法
+**多行线段树（Row-wise Segment Tree）**：
+- 数据结构：`NS[row][node]`表示第row行线段树的第node个节点
+- 每个节点维护该行某列区间内的最大值和最小值
+- 通过维护函数 `maintain(c, o)` 自底向上更新
+- 查询按行逐行进行，每行调用 `query(c, ...)` 查询该行的列区间最值
+
+### 复杂度分析
+- **时间复杂度**：
+  - 建树：O(n²)，每行独立建树O(n)，共n行
+  - 查询：O(n log n)每次，遍历最多n行，每行线段树查询O(log n)
+  - 修改：O(log n)每次，只需更新一行的一个叶子到根的路径
+- **空间复杂度**：O(n²)，n×4n个节点，约500×2000=1e6个节点
+
 ```cpp
 // UVa11297 - Census
 // 陈锋
+// 题目：二维RMQ - 查询子矩阵的最大值和最小值，支持单点修改
 #include<stdio.h>
 #include<algorithm>
 #include<cstring>
 using namespace std;
+
 const int NN = 508, INF = 1e9;
+
 struct SegTree2D {
   struct Node {
-    int Max, Min;
+    int Max, Min;  // 该节点对应区间的最大值和最小值
+    // 用另一个节点的值更新当前节点
     void update(const Node& nd) {
       Max = max(Max, nd.Max), Min = min(Min, nd.Min);
     }
-  } NS[NN][NN * 4]; //第一维表示是用矩阵的第几行建立的线段树
+  } NS[NN][NN * 4];  // 第一维：行编号；第二维：该行线段树的节点
 
-  Node qAns;
+  Node qAns;  // 查询过程中临时保存的汇总结果
+
+  // 自底向上更新节点o（使用左右子节点更新）
   void maintain(int c, int o) {
     Node& nd = NS[c][o], ld = NS[c][2 * o], rd = NS[c][2 * o + 1];
     nd.Max = max(ld.Max, rd.Max), nd.Min = min(ld.Min, rd.Min);
   }
 
+  // 为第c行建立线段树，节点o对应列区间[l, r]
   void build(int c, int o, int l, int r) {
     Node& nd = NS[c][o];
-    if (l == r) {
+    if (l == r) {  // 叶子节点：直接读入矩阵值
       scanf("%d", &nd.Min), nd.Max = nd.Min;
-      return ;
+      return;
     }
     int mid = (l + r) / 2, lc = o * 2, rc = o * 2 + 1;
     build(c, lc, l, mid), build(c, rc, mid + 1, r);
-    maintain(c, o);
+    maintain(c, o);  // 自底向上合并
   }
 
+  // 在第c行查询列区间[qL, qR]的最值
+  // 注意：此版本使用"中点拆分"的方式（非经典的"区间拆分"）
   void query(int c, int o, int l, int r, int qL, int qR) {
-    if (l == qL && r == qR) {
+    if (l == qL && r == qR) {  // 区间完全匹配
       qAns.update(NS[c][o]);
       return;
     }
     int qM = (qL + qR) / 2, lc = o * 2, rc = o * 2 + 1;
+    // 根据中点与当前区间的关系决定查询方向
     if (qM >= r) query(c, lc, l, r, qL, qM);
     else if (qM < l) query(c, rc, l, r, qM + 1, qR);
     else query(c, lc, l, qM, qL, qM), query(c, rc, qM + 1, r, qM + 1, qR);
   }
 
+  // 修改第c行第x列的值为val
   void modify(int c, int x, int val, int o, int l, int r) {
     Node& nd = NS[c][o];
-    if (l == r && l == x) {
+    if (l == r && l == x) {  // 找到目标叶子
       nd.Max = nd.Min = val;
-      return ;
+      return;
     }
     int m = (l + r) / 2, lc = o * 2, rc = o * 2 + 1;
     if (m >= x) modify(c, x, val, lc, l, m);
-    else if (m < x) modify(c, x, val, rc,  m + 1, r);
-    maintain(c, o);
+    else if (m < x) modify(c, x, val, rc, m + 1, r);
+    maintain(c, o);  // 自底向上更新路径上的节点
   }
 };
+
 SegTree2D ST;
+
 int main() {
   char op[10];
   for (int m, n, x1, y1, x2, y2, v; scanf("%d", &n) != EOF;) {
+    // 为每一行建立线段树
     for (int x = 1; x <= n; x++) ST.build(x, 1, 1, n);
     scanf("%d", &m);
     while (m--) {
       scanf("%s", op);
-      if (op[0] == 'q') {
-        ST.qAns.Max = -INF, ST.qAns.Min = INF;
+      if (op[0] == 'q') {  // 查询操作
+        ST.qAns.Max = -INF, ST.qAns.Min = INF;  // 初始化查询结果
         scanf("%d%d%d%d", &x1, &y1, &x2, &y2);
+        // 逐行查询，汇总所有行的结果
         for (int x = x1; x <= x2; x++) ST.query(x, 1, y1, y2, 1, n);
         printf("%d %d\n", ST.qAns.Max, ST.qAns.Min);
       }
-      if (op[0] == 'c')
+      if (op[0] == 'c')  // 修改操作
         scanf("%d%d%d", &x1, &y1, &v), ST.modify(x1, y1, v, 1, 1, n);
     }
   }
@@ -130,76 +223,135 @@ int main() {
 
 ## UVa11990 "Dynamic" Inversion
 
+### 题目描述
+给定一个1~n（n ≤ 200,000）的排列A[1..n]。然后依次处理m（m ≤ 100,000）次删除操作：
+1. 输出当前排列中的逆序对总数
+2. 然后删除值为x的元素（x保证存在）
+
+要求对每次删除操作输出删除前的逆序对数量。
+
+### 解题思路
+这是一个动态逆序对问题。核心思路是：初始逆序对数可以通过普通Fenwick树O(n log n)计算；每次删除元素x时，需要快速知道x参与了多少对逆序对，从而从总数中减去。
+
+删除x时，x贡献的逆序对包含两部分：
+1. **x左边的比x大的数** — 这些"逆序对"的"左元素"在x左边
+2. **x右边的比x小的数** — 这些"逆序对"的"右元素"在x右边
+
+为了高效查询，使用**嵌套数据结构**：
+- **FenwickRankTree**：外层Fenwick树按数组位置索引，每个Fenwick节点是一棵名次树（RankTree），维护该位置区间内所有元素值的排序信息
+- 这样可以在O(log² n)时间内查询"区间内比某值大/小的元素个数"
+
+另外还需维护已删除元素的信息：
+- 用另一个普通Fenwick树记录"已删除的元素"，用于修正计算（排除已删除元素的影响）
+- x右边比x小的数 = (总数比x小的) - (已删除的比x小的) - (x位置左边未删除的比x小的)
+
+### 算法方法
+**嵌套数据结构（Fenwick Tree + Rank Tree）**：
+1. **名次树（RankTree）**：静态构建的平衡BST，支持：
+   - `count(v, type)`：统计比v小/大的元素个数
+   - `erase(v)`：懒删除标记元素
+2. **FenwickRankTree**：每个Fenwick节点维护一棵名次树
+   - `count(x, v, type)`：统计A[1..x]中比v小(type=0)或大(type=1)的元素个数
+   - `erase(x, v)`：删除位置x的值v
+
+### 复杂度分析
+- **时间复杂度**：
+  - 构建FenwickRankTree：O(n log² n)，每个元素在O(log n)个Fenwick节点中，每个插入O(log n)
+  - 每次删除操作：O(log² n)，在O(log n)个Fenwick节点中查询和删除
+  - 总复杂度：O((n+m)log² n)，约(3e5)×400=1.2e8，可接受
+- **空间复杂度**：O(n log n)，名次树节点总数约n log n
+
 ```cpp
 // UVa11990 "Dynamic" Inversion
 // 刘汝佳
+// 题目：动态逆序对 - 依次删除排列中的元素，每次输出删除前的逆序对数
 #include<cstdio>
 #include<vector>
 #include<algorithm>
 #include<cassert>
 using namespace std;
 
-inline int lowbit(int x) { return x&-x; }
+// Fenwick树的lowbit操作
+inline int lowbit(int x) { return x & -x; }
 
+// 名次树节点
 struct Node {
-  Node *ch[2]; // 左右子树
-  int v; // 值
-  int s; // 结点总数。有删除标记的结点未统计在内
-  int d; // 删除标记
-  Node():d(0) {}
+  Node *ch[2];  // 左右子节点：ch[0]=左, ch[1]=右
+  int v;        // 节点存储的值（排序关键字）
+  int s;        // 以该节点为根的子树中有效节点总数（未删除的）
+  int d;        // 删除标记：0=有效, 1=已删除
+  Node(): d(0) {}
+  // 获取某侧子树的节点数（若为空返回0）
   int ch_s(int d) { return ch[d] == NULL ? 0 : ch[d]->s; }
 };
 
-// 名次树，懒删除实现
+// 名次树（Rank Tree / 顺序统计树）
+// 支持统计比某值小/大的元素个数，支持懒删除
 struct RankTree {
-  int n, next;
-  int *v;
-  Node *nodes, *root;
-  RankTree(int n, int* A):n(n) {
-    nodes = new Node[n];
+  int n, next;         // n=元素个数, next=节点分配下标
+  int *v;              // 临时数组，用于排序后构建平衡树
+  Node *nodes, *root;  // 节点池和根节点
+
+  // 构造函数：用排序数组A构建平衡BST
+  RankTree(int n, int* A): n(n) {
+    nodes = new Node[n];  // 预分配n个节点
     next = 0;
     v = new int[n];
     for(int i = 0; i < n; i++) v[i] = A[i];
-    sort(v, v+n);
-    root = build(0, n-1);
-    delete[] v;
+    sort(v, v + n);       // 排序
+    root = build(0, n-1); // 递归构建平衡BST
+    delete[] v;           // 临时数组不再需要
   }
 
+  // 递归构建平衡二叉搜索树
+  // 每次取中点作为根，保证树高度为O(log n)
   Node* build(int L, int R) {
     if(L > R) return NULL;
-    int M = L + (R-L) / 2;
+    int M = L + (R-L) / 2;               // 取中点
     int u = next++;
-    nodes[u].v = v[M];
-    nodes[u].ch[0] = build(L, M-1);
-    nodes[u].ch[1] = build(M+1, R);
+    nodes[u].v = v[M];                   // 节点的值
+    nodes[u].ch[0] = build(L, M-1);      // 左子树
+    nodes[u].ch[1] = build(M+1, R);      // 右子树
+    // 更新子树大小（有效节点数）
     nodes[u].s = nodes[u].ch_s(0) + nodes[u].ch_s(1) + 1;
     return &nodes[u];
   }
 
-  // type = 0：统计比v小的元素个数
-  // type = 1：统计比v大的元素个数  
+  // type = 0：统计树中比v小的有效元素个数
+  // type = 1：统计树中比v大的有效元素个数
   int count(int v, int type) {
     Node* u = root;
     int cnt = 0;
     while(u != NULL) {
-      if(u->v == v) { cnt += u->ch_s(type); break; }
+      if(u->v == v) {
+        // 找到目标值，加上同侧子树的元素数（满足大小关系）
+        cnt += u->ch_s(type);
+        break;
+      }
+      // 决定往左(c=0)还是往右(c=1)
       int c = (v < u->v ? 0 : 1);
+      // 如果去的方向与需求相反，把另一侧所有的都算上
       if(c != type) cnt += u->s - u->ch_s(c);
       u = u->ch[c];
     }
     return cnt;
   }
 
-  // 要保证v在树中且尚未删除
+  // 懒删除：标记v对应的节点为已删除
+  // 前提：v在树中且尚未删除
   void erase(int v) {
     Node* u = root;
     while(u != NULL) {
-      u->s--;
-      if(u->v == v) { assert(u->d == 0); u->d = 1; return; }
+      u->s--;  // 路径上每个节点的有效计数减1
+      if(u->v == v) {
+        assert(u->d == 0);  // 确保尚未删除
+        u->d = 1;            // 标记为已删除
+        return;
+      }
       int c = (v < u->v ? 0 : 1);
       u = u->ch[c];
     }
-    assert(0);
+    assert(0);  // 不应到达这里
   }
 
   ~RankTree() {
@@ -208,61 +360,68 @@ struct RankTree {
 };
 
 // 嵌套名次树的Fenwick树
+// 外层按位置索引，内层维护该位置区间内所有元素值的名次树
 struct FenwickRankTree {
   int n;
-  vector<RankTree*> C;
+  vector<RankTree*> C;  // C[i]维护[ i-lowbit(i)+1, i ]区间内元素的名次树
 
+  // 初始化：为每个Fenwick节点建立名次树
   void init(int n, int* A) {
     this->n = n;
-    C.resize(n+1); // 存放在C[1]~C[n]
+    C.resize(n + 1);  // 1-indexed
+    // C[i]管理区间[i-lowbit(i)+1, i]，大小为lowbit(i)
     for(int i = 1; i <= n; i++) {
-      C[i] = new RankTree(lowbit(i), A+i-lowbit(i)+1);
+      C[i] = new RankTree(lowbit(i), A + i - lowbit(i) + 1);
     }
   }
 
   void clear() { for(int i = 1; i <= n; i++) delete C[i]; }
 
-  // 统计A[1], A[2], ..., A[x]有多少个元素比v大(x<=n)
+  // 统计A[1..x]中比v大(type=1)或比v小(type=0)的元素个数
   int count(int x, int v, int type) {
     int ret = 0;
     while(x > 0) {
-      ret += C[x]->count(v, type); x -= lowbit(x);
+      ret += C[x]->count(v, type);
+      x -= lowbit(x);  // 跳到前一个Fenwick节点
     }
     return ret;
   }
 
-  // 删除A[x]=v
+  // 删除A[x] = v（在所有包含位置x的名次树中删除v）
   void erase(int x, int v) {
     while(x <= n) {
-      C[x]->erase(v); x += lowbit(x);
+      C[x]->erase(v);
+      x += lowbit(x);  // 跳到下一个包含x的Fenwick节点
     }
   }
 };
 
-// 普通Fenwick树
+// 普通Fenwick树（用于维护已删除元素信息）
 struct FenwickTree {
   int n;
   vector<int> C;
 
   void init(int n) {
     this->n = n;
-    C.resize(n+1);
+    C.resize(n + 1);
     fill(C.begin(), C.end(), 0);
   }
 
-  // 计算A[1]+A[2]+...+A[x] (x<=n)
+  // 前缀和：A[1] + A[2] + ... + A[x]
   int sum(int x) {
     int ret = 0;
     while(x > 0) {
-      ret += C[x]; x -= lowbit(x);
+      ret += C[x];
+      x -= lowbit(x);
     }
     return ret;
   }
 
-  // A[x] += d (1<=x<=n)
+  // 单点加：A[x] += d
   void add(int x, int d) {
     while(x <= n) {
-      C[x] += d; x += lowbit(x);
+      C[x] += d;
+      x += lowbit(x);
     }
   }
 };
@@ -272,40 +431,51 @@ const int maxm = 100000 + 5;
 typedef long long LL;
 
 int n, m, A[maxn], B[maxn], pos[maxn];
-FenwickRankTree frt;
-FenwickTree f; // 用来求逆序对数以及求已删除的元素有多少个比v小
+FenwickRankTree frt;  // 嵌套名次树的Fenwick树
+FenwickTree f;        // 用于：1)计算初始逆序对 2)记录已删除元素
 
+// 计算初始排列的逆序对数
 LL inversion_pairs() {
   LL ans = 0;
   f.init(n);
+  // 从后向前遍历，统计比当前元素小的元素个数
   for(int i = n; i >= 1; i--) {
-    ans += f.sum(A[i]-1);
-    f.add(A[i], 1);
+    ans += f.sum(A[i] - 1);  // 查询比A[i]小的已遍历元素有几个
+    f.add(A[i], 1);          // 将A[i]加入Fenwick树
   }
   return ans;
 }
 
 int main() {
   while(scanf("%d%d", &n, &m) == 2) {
+    // 读入排列，同时建立值到位置的映射
     for(int i = 1; i <= n; i++) {
       scanf("%d", &A[i]);
-      pos[B[i] = A[i]] = i;
+      pos[B[i] = A[i]] = i;  // pos[值] = 位置
     }
+    // 计算初始逆序对数
     LL cnt = inversion_pairs();
+    
+    // 初始化嵌套名次树的Fenwick树
     frt.init(n, A);
+    // 初始化普通Fenwick树（用于记录已删除元素）
     f.init(n);
+    
     for(int i = 0; i < m; i++) {
-      printf("%lld\n", cnt);
+      printf("%lld\n", cnt);  // 输出当前逆序对数
       int x;
       scanf("%d", &x);
-      f.add(x, 1);
-      int a = frt.count(pos[x]-1, x, 1); // x左边有a个比x大
-      int b = x-1; // 一共有x-1个数比x小
-      int c = f.sum(x-1); // 删了c个比x小的
-      int d = frt.count(pos[x]-1, x, 0);  // 现在左边有d个比x小
-      b -= c + d;  // 还剩b个
-      cnt -= a + b; // 逆序对减少a+b个
-      frt.erase(pos[x], x);
+      f.add(x, 1);  // 标记x已被删除
+      
+      // 计算删除x后减少的逆序对数
+      int a = frt.count(pos[x]-1, x, 1);  // x左边还有a个比x大（未被删的）
+      int b = x - 1;                       // 总共比x小的数有x-1个
+      int c = f.sum(x - 1);               // 已删除的比x小的数
+      int d = frt.count(pos[x]-1, x, 0);  // x左边未删且比x小的数
+      b -= c + d;                          // 剩余的：x右边未删且比x小的数
+      
+      cnt -= a + b;  // 逆序对减少 = 左边比x大 + 右边比x小
+      frt.erase(pos[x], x);  // 在所有嵌套树中删除x
     }
   }
   return 0;
@@ -315,64 +485,125 @@ int main() {
 
 ## UVa12003 Array Transformer
 
+### 题目描述
+给定一个长度为n（n ≤ 300,000）的整数数组A[0..n-1]和一个参数u。进行m次操作，每次操作给定L, R, v, p（1-indexed，即L,R,p∈[1,n]）：
+1. 查询区间A[L..R]中有多少个元素小于v，记结果为k
+2. 将A[p]的值修改为 `(u * k) / (R - L + 1)`（整数除法）
+
+重复m次后，输出最终的完整数组。
+
+### 解题思路
+这是一个"区间查询 + 单点修改"问题，但修改的值依赖于查询结果，必须在线处理。由于n,m都很大（300,000），需要使用分块（Sqrt Decomposition）技术：
+
+1. **分块**：将数组分成大小为SIZE=4096的块（约√n）
+2. **块内排序**：每块内维护排序后的数组副本，用于二分查找
+3. **查询**：
+   - 两端不完整块：逐一遍历（O(SIZE)）
+   - 中间完整块：二分查找（O(log SIZE)）
+4. **修改**：在原数组和排序块中同时更新，通过冒泡调整位置保持块内有序
+
+### 算法方法
+**分块（Block Decomposition / Sqrt Decomposition）**：
+- 分块参数：SIZE = 4096
+- 块内排序维护：`block[i]`为第i块元素的排序版本
+- 查询时混合遍历和二分查找
+- 修改时在块内做交换维护有序性（最多O(SIZE)的冒泡操作）
+
+### 复杂度分析
+- **时间复杂度**：
+  - 查询：O(SIZE + (n/SIZE) × log SIZE) ≈ O(√n log √n) 每次，约4096+73×12≈5000
+  - 修改：O(SIZE) 每次，块内冒泡最多移动SIZE个元素
+  - 总：O(m√n)，约3e5×4e3=1.2e9（实际远小于此，因为修改和查询不是每次都有完整块遍历）
+- **空间复杂度**：O(n)，存储原数组和分块排序数组
+
 ```cpp
 // UVa12003 Array Transformer
 // 刘汝佳
+// 题目：数组变换 - 区间查询+单点修改，修改值依赖查询结果
 #include<cstdio>
 #include<algorithm>
 using namespace std;
 
 const int maxn = 300000 + 10;
-const int SIZE = 4096;
+const int SIZE = 4096;  // 块大小 ≈ sqrt(300000)
 
-int n, m, u, A[maxn], block[maxn/SIZE+1][SIZE];
+int n, m, u;
+int A[maxn];                     // 原始数组
+int block[maxn/SIZE+1][SIZE];   // 分块排序数组，block[i][j]为第i块的第j个元素
 
+// 初始化：读入数据并分块排序
 void init() {
   scanf("%d%d%d", &n, &m, &u);
-  int b = 0, j = 0;
+  int b = 0, j = 0;  // b=当前块编号, j=当前块内的位置
   for(int i = 0; i < n; i++) {
     scanf("%d", &A[i]);
-    block[b][j] = A[i];
-    if(++j == SIZE) { b++; j = 0; }
+    block[b][j] = A[i];  // 放入当前块
+    if(++j == SIZE) { b++; j = 0; }  // 块满，换下一块
   }
-  for(int i = 0; i < b; i++) sort(block[i], block[i]+SIZE);
-  if(j) sort(block[b], block[b]+j);
+  // 对每个完整的块排序
+  for(int i = 0; i < b; i++) sort(block[i], block[i] + SIZE);
+  // 对最后不完整的块排序
+  if(j) sort(block[b], block[b] + j);
 }
 
+// 查询区间[L, R]中小于v的元素个数k
 int query(int L, int R, int v) {
-  int lb = L/SIZE, rb = R/SIZE; // L和R所在块编号
+  int lb = L / SIZE, rb = R / SIZE;  // 左右端点所在块编号
   int k = 0;
+  
   if(lb == rb) {
+    // 同一块内：直接遍历
     for(int i = L; i <= R; i++) if(A[i] < v) k++;
   } else {
-    for(int i = L; i < (lb+1)*SIZE; i++) if(A[i] < v) k++; // 第一块
-    for(int i = rb*SIZE; i <= R; i++) if(A[i] < v) k++; // 最后一块
-    for(int b = lb+1; b < rb; b++) // 中间的完整块
-      k += lower_bound(block[b], block[b]+SIZE, v) - block[b];
+    // 左端不完整块：逐一遍历
+    for(int i = L; i < (lb+1)*SIZE; i++) if(A[i] < v) k++;
+    // 右端不完整块：逐一遍历
+    for(int i = rb*SIZE; i <= R; i++) if(A[i] < v) k++;
+    // 中间完整块：二分查找（块内已排序）
+    for(int b = lb+1; b < rb; b++)
+      k += lower_bound(block[b], block[b] + SIZE, v) - block[b];
   }
   return k;
 }
 
+// 修改A[p]的值为x，并维护分块排序
 void change(int p, int x) {
-  if(A[p] == x) return;
-  int old = A[p], pos = 0, *B = &block[p/SIZE][0]; // B就是p所在的块
-  A[p] = x;
-
-  while(B[pos] < old) pos++; B[pos] = x; // 找到x在块中的位置
-  if(x > old) // x太大，往后交换
-    while(pos < SIZE-1 && B[pos] > B[pos+1]) { swap(B[pos+1], B[pos]); pos++; }
-  else // 往前交换
-    while(pos > 0 && B[pos] < B[pos-1]) { swap(B[pos-1], B[pos]); pos--; }
+  if(A[p] == x) return;  // 值未变，无需修改
+  
+  int old = A[p], pos = 0;
+  int *B = &block[p/SIZE][0];  // B指向p所在块的排序数组
+  A[p] = x;  // 更新原始数组
+  
+  // 在排序块中找到old的位置，替换为x
+  while(B[pos] < old) pos++;
+  B[pos] = x;
+  
+  // 维护块内有序性（冒泡调整）
+  if(x > old) {
+    // 新值变大，向后冒泡
+    while(pos < SIZE-1 && B[pos] > B[pos+1]) {
+      swap(B[pos+1], B[pos]); pos++;
+    }
+  } else {
+    // 新值变小，向前冒泡
+    while(pos > 0 && B[pos] < B[pos-1]) {
+      swap(B[pos-1], B[pos]); pos--;
+    }
+  }
 }
 
 int main() {
   init();
   while(m--) {
     int L, R, v, p;
-    scanf("%d%d%d%d", &L, &R, &v, &p); L--; R--; p--;
-    int k = query(L, R, v);
-    change(p, (long long)u * k / (R-L+1));
+    scanf("%d%d%d%d", &L, &R, &v, &p);
+    L--; R--; p--;  // 转换为0-indexed
+    
+    int k = query(L, R, v);  // 查询区间内小于v的元素个数
+    // 修改：新值 = (u * k) / (R-L+1)，注意使用long long防止溢出
+    change(p, (long long)u * k / (R - L + 1));
   }
+  // 输出最终数组
   for(int i = 0; i < n; i++) printf("%d\n", A[i]);
   return 0;
 }

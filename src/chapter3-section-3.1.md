@@ -2,35 +2,73 @@
 
 ## 例题6  合作网络（Corporative Network, Codeforces Gym 101461B）
 
+### 题目描述
+有N个企业（结点），最初每个企业都是独立的，没有上级。现在需要处理以下两种操作：
+- **I u v**：将企业u的父节点设置为v，定义u到v的距离为 `|u-v| % 1000`（即两企业编号之差模1000）。
+- **E u**：查询企业u到其根节点（最顶层母公司）的总距离，即从u向上追溯到根节点所经过的各边距离之和。
+
+每组测试数据以字母 `O` 结束。多组测试用例，T为测试用例组数。
+- **输入格式**：第一行为T，每组数据以N（企业数量）开始，然后是若干操作，以O结束。
+- **约束**：N ≤ 20000，距离计算使用模1000运算。
+
+### 解题思路
+本题是**带权并查集**的典型应用。普通并查集只维护连通关系，而本题需要维护每个节点到根节点的距离（权值）。关键设计：
+1. **两个数组**：`pa[x]` 存储父节点，`d[x]` 存储当前节点到父节点的距离。
+2. **findset路径压缩**：在递归查找根节点的过程中，由于要先递归才能知道父节点已压缩后的d值，所以采用"先递归、后累加"的顺序。路径压缩后，x直接挂到根节点，`d[x]` 变为到根节点的总距离。
+3. **合并操作（I）**：直接设置 `pa[u]=v`，并初始化 `d[u]=|u-v|%1000`，不需要按高度/大小合并（因为题目规定合并方向）。
+4. **查询操作（E）**：先调用 `findset(u)` 确保路径压缩，此时 `d[u]` 即为到根节点的总距离。
+
+### 算法方法
+**并查集（带权并查集 / DSU with distance weights）**：在标准并查集的基础上，为每条边附加一个权值（距离），在find操作中进行权值的累加维护。每次findset操作通过递归实现路径压缩和距离更新的同步。
+
+### 复杂度分析
+- **时间复杂度**：O(T × M × α(N))，其中M为操作数，α为反阿克曼函数，均摊近乎O(1)。每次findset操作均摊复杂度约O(α(N))，路径压缩保证了后续查询效率。
+- **空间复杂度**：O(N)，需要两个大小为N+10的数组pa和d。
+
 ```cpp
 // 例题6  合作网络（Corporative Network, Codeforces Gym 101461B）
 // Rujia Liu
+// 题目：有N个企业，支持两种操作：
+//   I u v - 设置u的父节点为v，距离为|u-v|%1000
+//   E u   - 查询u到根节点的总距离
+// 算法：带权并查集，每个节点维护到父节点的距离，路径压缩时累加
 #include <algorithm>
 #include <iostream>
 #include <string>
 using namespace std;
 const int maxn = 20000 + 10;
-int pa[maxn], d[maxn];
+int pa[maxn], d[maxn];  // pa: 父节点数组（并查集）, d: 当前节点到父节点的距离
+
+// 带权并查集的查找函数：递归查找根节点，同时进行路径压缩和距离累加
 int findset(int x) {
-  if (pa[x] == x) return x;
-  int root = findset(pa[x]);
-  d[x] += d[pa[x]];
-  return pa[x] = root;
+  if (pa[x] == x) return x;        // 根节点：父节点指向自身，距离为0
+  int root = findset(pa[x]);       // 先递归查找根节点（重要：必须先递归）
+  d[x] += d[pa[x]];                // 累加父节点已更新过的距离，得到x到根的总距离
+  return pa[x] = root;             // 路径压缩：直接将x挂到根节点
 }
 
 int main() {
   freopen("network.in", "r", stdin);
   freopen("network.out", "w", stdout);
-  ios_base::sync_with_stdio(false);
+  ios::sync_with_stdio(false);
   int T;
   cin >> T;
   for (int kase = 0, n, u, v; kase < T; kase++) {
     string cmd;
     cin >> n;
+    // 初始化并查集：每个节点是自己的根，到自身的距离为0
     for (int i = 1; i <= n; i++) pa[i] = i, d[i] = 0;
     while (cin >> cmd && cmd[0] != 'O') {
-      if (cmd[0] == 'E') cin >> u, findset(u), cout << d[u] << endl;
-      if (cmd[0] == 'I') cin >> u >> v, pa[u] = v, d[u] = abs(u - v) % 1000;
+      if (cmd[0] == 'E') {         // 查询操作：E u
+        cin >> u;
+        findset(u);                // 先执行findset确保路径压缩，更新d[u]
+        cout << d[u] << endl;      // d[u]存储的是u到根节点的总距离
+      }
+      if (cmd[0] == 'I') {         // 合并/连接操作：I u v
+        cin >> u >> v;
+        pa[u] = v;                 // 设置u的父节点为v
+        d[u] = abs(u - v) % 1000;  // u到新父节点v的距离 = |u-v| mod 1000
+      }
     }
   }
   return 0;
@@ -40,37 +78,72 @@ int main() {
 
 ## 例题3  阿格斯（Argus, Beijing 2004, POJ2051）
 
+### 题目描述
+Argus是一个系统监控工具，需要监控多个"触发器（Register）"。每个触发器有两个属性：
+- **QNum**：触发器编号（唯一标识）
+- **Period**：触发周期（秒）
+
+触发器从其启动时间 `Time = Period` 开始，之后每隔 Period 秒触发一次。给定若干触发器的定义，以及一个整数K，要求按触发先后顺序输出前K次触发的触发器编号。**如果多个触发器在同一时刻触发，编号较小的先输出**。
+
+- **输入格式**：多行 `Register QNum Period` 格式，以 `#` 结束触发器定义；然后一行整数K。
+- **输出格式**：输出K行，每行一个触发器编号，按触发时间排序。
+- **约束**：触发器数量和K均不超出合理范围，编号为正整数。
+
+### 解题思路
+这是一个典型的**事件驱动模拟**问题，使用**优先队列**（最小堆）模拟时间轴：
+1. **定义Item结构体**：包含触发器编号（QNum）、周期（Period）、下次触发时间（Time）。
+2. **比较器设计**：重载 `<` 运算符，使优先队列按"Time小的优先"排列；Time相同时按"QNum小的优先"（注意priority_queue默认是大顶堆，所以比较器要反着写：`return Time > a.Time` 表示Time小的优先级高）。
+3. **初始化**：读取每个触发器，设置 `Time = Period`，全部压入优先队列。
+4. **模拟K次触发**：
+   - 取出队首元素（当前最早触发的事件）
+   - 输出其QNum
+   - 将其Time加上Period（更新为下次触发时间），重新入队
+5. 重复K次即可按时间先后输出前K个触发事件。
+
+### 算法方法
+**优先队列（二叉堆 / priority_queue）**：利用C++ STL的`priority_queue`实现最小堆行为（通过自定义`operator<`反转比较逻辑）。这是处理离散事件模拟（DES）和时间轴调度的基础数据结构。
+
+### 复杂度分析
+- **时间复杂度**：O(K log N)，其中N为触发器数量。每次从优先队列中弹出和压入元素的复杂度为O(log N)，共执行K次操作。
+- **空间复杂度**：O(N)，优先队列最多存储N个触发器元素。
+
 ```cpp
 // 例题3  阿格斯（Argus, Beijing 2004, POJ2051）
 // 陈锋
+// 题目：多个触发器按周期触发，输出前K次触发的编号
+// 算法：优先队列模拟事件驱动，每次取出最早触发的触发器并更新
 #include<cstdio>
 #include<queue>
 using namespace std;
 
-struct Item { // 优先队列中的元素
-  int QNum, Period, Time;
-  // 重要！优先级比较函数。优先级高的先出队
-  bool operator < (const Item& a) const { // 这里的const必不可少，请读者注意
-    if (Time != a.Time) return Time > a.Time;
-    return QNum > a.QNum;
+// 优先队列中的元素：每个触发器对应一个Item
+struct Item {
+  int QNum, Period, Time;  // 编号, 周期, 下次触发时间
+  // 重载 < 运算符定义优先队列的排序规则
+  // priority_queue默认是大顶堆（大的优先），这里反写使Time小的优先
+  bool operator < (const Item& a) const {
+    if (Time != a.Time) return Time > a.Time;  // Time小的优先级高（出队早）
+    return QNum > a.QNum;  // 时间相同时，编号小的优先级高
   }
 };
 
 int main() {
-  priority_queue<Item> pq;
+  priority_queue<Item> pq;  // 优先队列（内部实现为大顶堆，比较逻辑反向则为最小堆）
   char s[20];
+  // 读取触发器定义，直到遇到 '#'
   for (Item item; scanf("%s", s) && s[0] != '#'; pq.push(item)) {
     scanf("%d%d", &item.QNum, &item.Period);
-    item.Time = item.Period; // 初始化“下一次事件的时间”为它的周期
+    item.Time = item.Period;  // 初始化：第一次触发时间为Period
   }
   int K;
   scanf("%d" , &K);
+  // 模拟K次触发事件
   while (K--) {
-    Item r = pq.top(); // 取下一个事件
-    pq.pop();
-    printf("%d\n" , r.QNum);
-    r.Time += r.Period; // 更新该触发器的“下一个事件”的时间
-    pq.push(r); // 重新插入优先队列
+    Item r = pq.top();  // 取出当前最早触发的事件
+    pq.pop();           // 从队列中移除
+    printf("%d\n" , r.QNum);  // 输出触发器编号
+    r.Time += r.Period;       // 更新下次触发时间：加上一个周期
+    pq.push(r);               // 重新将更新后的触发器压入优先队列
   }
   return 0;
 }
@@ -79,37 +152,63 @@ int main() {
 
 ## 例题5  易爆物（X-Plosives, UVa1160）
 
+### 题目描述
+你在一个化学实验室工作，需要将多种化学物质放入仓库。每种化学物质由**两个元素编号**组成（一对整数 u, v）。当放入一种化学物质时，如果它的两个元素已经通过之前放入的物质间接连通（即两个元素已经属于同一个等价类），则该物质会与已有物质形成一个"环"，从而引发爆炸。**需要统计会引发爆炸的物质对数**。
+
+- **输入格式**：多组测试数据。每组数据包含多行，每行两个整数 u, v（元素编号），以 `-1` 结束一组数据。整个输入以EOF结束。
+- **输出格式**：每组数据输出一行，一个整数，表示会导致爆炸的物质对数量。
+- **约束**：元素编号范围大致在 [0, 100000] 内，不保证编号连续。
+
+### 解题思路
+这是一个**图论中检测环**的经典问题，等价于判断当前加入的边是否会使无向图产生环，可使用**并查集**解决：
+1. **建模**：将每个元素视为图中的节点，每种化学物质 (u,v) 视为一条连接u和v的无向边。
+2. **判断环**：加入边 (u,v) 时，查找u和v的根节点pu和pv：
+   - 若 `pu == pv`：说明u和v已经在同一连通分量中，加入这条边会形成环 → 易爆物计数+1
+   - 若 `pu != pv`：说明u和v分属不同连通分量，合并它们（`Pa[pu] = v`）
+3. **并查集实现**：使用路径压缩优化的findPa函数。注意本题不需要按秩合并（题目性质决定的简化写法）。
+4. **输入处理**：由于一组数据可能跨越多行，且以 -1 标记结束，需要逐对读入。
+
+### 算法方法
+**并查集（Disjoint Set Union, DSU / Union-Find）**：用于维护元素的等价关系和连通分量的合并。核心操作是 `findPa`（查找代表元）和 union（合并两个集合）。本题利用并查集快速判断两个元素是否已经在同一集合中，从而检测成环。
+
+### 复杂度分析
+- **时间复杂度**：O(M × α(MAXN))，其中M为物质对总数，α为反阿克曼函数（约≤4），均摊近似O(1)每操作。路径压缩保证了高效的查找。
+- **空间复杂度**：O(MAXN)，需要大小为 ~100004 的Pa数组存储父节点信息。
+
 ```cpp
 // 例题5  易爆物（X-Plosives, UVa1160）
 // 陈锋
+// 题目：每种化学物质由两个元素组成，若加入后形成环则易爆，统计易爆物数量
+// 算法：并查集检测无向图中的环：若一条边的两端已在同一集合，则加入后会形成环
 #include <bits/stdc++.h>
 using namespace std;
 #define _for(i, a, b) for (int i = (a); i < (b); ++i)
 #define _rep(i, a, b) for (int i = (a); i <= (b); ++i)
 typedef long long LL;
 const int MAXN = 100000 + 4;
-int Pa[MAXN];
+int Pa[MAXN];  // 并查集的父节点数组
 
+// 并查集查找函数：带路径压缩
 int findPa(int u) {
-  return Pa[u] == u ? u : (Pa[u] = findPa(Pa[u]));
+  return Pa[u] == u ? u : (Pa[u] = findPa(Pa[u]));  // 路径压缩：将u直接挂到根节点
 }
 
 int main() {
   int u, v;
   while (true) {
-    _rep(i, 0, MAXN) Pa[i] = i;
-    int ans = 0;
+    _rep(i, 0, MAXN) Pa[i] = i;  // 初始化并查集：每个元素是自己的集合代表
+    int ans = 0;  // 易爆物计数器
     while (true) {
-      if (scanf("%d", &u) != 1) return 0;
-      if (u == -1) break;
+      if (scanf("%d", &u) != 1) return 0;  // EOF：结束整个程序
+      if (u == -1) break;  // 当前测试组结束
       scanf("%d", &v);
-      int pu = findPa(u), pv = findPa(v);
+      int pu = findPa(u), pv = findPa(v);  // 查找u和v所在集合的根节点
       if (pu == pv)
-        ans++;
+        ans++;  // 两个元素已在同一集合 → 加入此边形成环 → 易爆物+1
       else
-        Pa[pu] = v;
+        Pa[pu] = v;  // 不在同一集合 → 合并两个连通分量
     }
-    printf("%d\n", ans);
+    printf("%d\n", ans);  // 输出本组数据的易爆物数量
   }
   return 0;
 }
@@ -118,28 +217,58 @@ int main() {
 
 ## 例题2  一道简单题（Easy Problem from Rujia Liu?, UVa 11991）
 
+### 题目描述
+给定一个长度为n的整数数组。有m个查询，每个查询由两个整数k和v组成，你需要回答：在数组中，**数值v第k次出现的位置**（下标从1开始计数）。如果v在数组中出现的次数不足k次，则输出 `0`。
+
+- **输入格式**：多组测试数据。每组数据第一行包含 n 和 m（数组长度和查询次数），接下来n个数为数组元素，然后m行每行两个整数k和v（查询）。
+- **输出格式**：对于每个查询，输出一行结果。
+- **约束**：n, m 均不超出常见OJ数据范围（如 n, m ≤ 10^5），数组中元素的值可以较大。
+
+### 解题思路
+这是一个**位置索引查询**问题，核心是在O(1)或O(log n)时间内回答"某个值第k次出现的位置"。使用 **map + vector** 组合：
+1. **数据结构**：`map<int, vector<int>>`，键为元素值，值为一个vector记录该值在数组中出现的所有位置（按下标顺序自然有序）。
+2. **预处理**：遍历数组，对于每个位置i的元素x，在map中查找x对应的vector（若不存在则创建），将 `i+1`（1-based位置）追加到vector尾部。预处理后，每个值的出现位置按升序排列。
+3. **查询**：对于查询(k, v)：
+   - 先检查v是否在map中（`a.count(y)`），且vector长度 ≥ k
+   - 若满足，输出 `a[y][k-1]`（vector从0开始索引，第k次对应下标k-1）
+   - 否则输出 `0`
+4. **可优化**：如果元素值范围可控，可用 `unordered_map` 将查找从O(log n)优化到O(1)。
+
+### 算法方法
+**哈希表（std::map / std::unordered_map）+ 动态数组（std::vector）**：利用map实现从"值"到"出现位置列表"的快速映射。map保证键有序，unordered_map在值范围较大时提供更好的平均查询性能。
+
+### 复杂度分析
+- **时间复杂度**：预处理 O(n log n)（使用map）或 O(n)（使用unordered_map），每次查询 O(log n)（map查找）或 O(1)（unordered_map查找）。总复杂度 O((n+m) log n) 或 O(n+m)。
+- **空间复杂度**：O(n)，存储n个位置信息，每个位置恰好存入一个vector中。
+
 ```cpp
 // 例题2  一道简单题（Easy Problem from Rujia Liu?, UVa 11991）
 // Rujia Liu
+// 题目：给定数组，回答m个查询：数值v第k次出现的位置
+// 算法：map<int, vector<int>> 建立值到位置列表的索引
 #include<cstdio>
 #include<vector>
 #include<map>
 using namespace std;
 
-map<int, vector<int> > a; // 最后两个>不要连写，否则会被误认为>>
+// map: 键=元素值, 值=该元素出现的所有位置列表（按顺序存储）
+map<int, vector<int> > a;
 
 int main() {
   int n, m, x, y;
   while(scanf("%d%d", &n, &m) == 2) {
-    a.clear();
+    a.clear();  // 清空上一组数据的索引
+    // 预处理：构建值→位置列表的映射
     for(int i = 0; i < n; i++) {
-      scanf("%d", &x); if(!a.count(x)) a[x] = vector<int>();
-      a[x].push_back(i+1);
+      scanf("%d", &x);
+      if(!a.count(x)) a[x] = vector<int>();  // 首次出现该值：创建空vector
+      a[x].push_back(i+1);  // 记录位置（1-based下标）
     }
+    // 处理m个查询
     while(m--) {
-      scanf("%d%d", &x, &y);
-      if(!a.count(y) || a[y].size() < x) printf("0\n");
-      else printf("%d\n", a[y][x-1]);
+      scanf("%d%d", &x, &y);  // x = k（第k次）, y = v（值）
+      if(!a.count(y) || a[y].size() < x) printf("0\n");  // 值不存在或出现次数不足k次
+      else printf("%d\n", a[y][x-1]);  // 第k次出现的位置（vector下标从0开始）
     }
   }
   return 0;
@@ -149,53 +278,96 @@ int main() {
 
 ## 例题1  猜猜数据结构（I Can Guess the Data Structure!, UVa 11995）
 
+### 题目描述
+给定n个操作对 `(t, v)`，其中：
+- **t = 1**：表示向一个未知的数据结构中插入元素v
+- **t = 2**：表示从该数据结构中取出一个元素，期望取出的值是v
+
+你需要根据这些操作序列判断该未知数据结构可能是以下哪种：
+- **stack**（栈，LIFO后进先出）
+- **queue**（队列，FIFO先进先出）
+- **priority queue**（优先队列，最大值先出）
+
+输出可能有以下几种情况：
+- 唯一确定 → 输出对应名称（stack / queue / priority queue）
+- 多种可能 → 输出 `not sure`
+- 都不是 → 输出 `impossible`
+
+- **输入格式**：多组测试数据。每组第一行为整数n（操作数），接下来n行每行两个整数 t v。
+- **输出格式**：每组一行，输出判断结果。
+- **约束**：n ≤ 1000（每组），v为正整数。
+
+### 解题思路
+采用**模拟验证法**，分别用三种数据结构独立模拟操作序列，看哪些能匹配：
+1. **三种模拟函数**：
+   - `check_stack()`：所有t=1时push入栈，t=2时检查栈顶元素（top+pop）是否等于v
+   - `check_queue()`：所有t=1时push入队列，t=2时检查队首元素（front+pop）是否等于v
+   - `check_pq()`：所有t=1时push入优先队列，t=2时检查队首最大元素（top+pop）是否等于v
+2. **关键验证点**：当t=2时：
+   - 如果数据结构为空（`empty()`），说明没有元素可取 → 不匹配（返回0）
+   - 如果取出的元素不等于v → 不匹配（返回0）
+   - 所有操作都通过 → 匹配（返回1）
+3. **结果判定**：根据三个检查函数的返回值（s, q, pq），按组合情况输出对应结果。
+
+### 算法方法
+**栈（stack）、队列（queue）、优先队列（priority_queue）** 三种基础数据结构的性质模拟。本题的核心考点是对这三种数据结构操作语义（LIFO / FIFO / Max-Heap）的理解和实际编码验证能力。
+
+### 复杂度分析
+- **时间复杂度**：O(3 × n) = O(n)，每个操作序列被三种数据结构各遍历一次，每次push/pop为O(1)。
+- **空间复杂度**：O(n)，每种数据结构最多存储n个元素。
+
 ```cpp
 // 例题1  猜猜数据结构（I Can Guess the Data Structure!, UVa 11995）
 // Rujia Liu
+// 题目：给定插入/取出操作序列，判断可能是哪种数据结构
+// 算法：分别用栈、队列、优先队列模拟操作，看哪种能匹配
 #include<cstdio>
-#include<queue>
-#include<stack>
+#include<queue>     // queue, priority_queue
+#include<stack>     // stack
 #include<cstdlib>
 using namespace std;
 
 const int maxn = 1000 + 10;
-int n, t[maxn], v[maxn];
+int n, t[maxn], v[maxn];  // t: 操作类型(1=插入, 2=取出), v: 操作值
 
+// 检查操作序列是否匹配栈（后进先出, LIFO）
 int check_stack() {
   stack<int> s;
   for(int i = 0; i < n; i++) {
-    if(t[i] == 2) {
-      if(s.empty()) return 0;
-      int x = s.top(); s.pop();
-      if(x != v[i]) return 0;
+    if(t[i] == 2) {         // 取出操作
+      if(s.empty()) return 0;   // 栈为空，无法取出 → 不匹配
+      int x = s.top(); s.pop(); // 弹出栈顶元素
+      if(x != v[i]) return 0;   // 栈顶元素不等于期望值 → 不匹配
     }
-    else s.push(v[i]);
+    else s.push(v[i]);  // 插入操作：压入栈顶
   }
-  return 1;
+  return 1;  // 所有操作均匹配
 }
 
+// 检查操作序列是否匹配队列（先进先出, FIFO）
 int check_queue() {
   queue<int> s;
   for(int i = 0; i < n; i++) {
-    if(t[i] == 2) {
-      if(s.empty()) return 0;
-      int x = s.front(); s.pop();
-      if(x != v[i]) return 0;
+    if(t[i] == 2) {          // 取出操作
+      if(s.empty()) return 0;    // 队列为空 → 不匹配
+      int x = s.front(); s.pop(); // 弹出队首元素
+      if(x != v[i]) return 0;    // 队首元素不等于期望值 → 不匹配
     }
-    else s.push(v[i]);
+    else s.push(v[i]);  // 插入操作：加入队尾
   }
   return 1;
 }
 
+// 检查操作序列是否匹配优先队列（大顶堆, 最大值先出）
 int check_pq() {
   priority_queue<int> s;
   for(int i = 0; i < n; i++) {
-    if(t[i] == 2) {
-      if(s.empty()) return 0;
-      int x = s.top(); s.pop();
-      if(x != v[i]) return 0;
+    if(t[i] == 2) {          // 取出操作
+      if(s.empty()) return 0;    // 优先队列为空 → 不匹配
+      int x = s.top(); s.pop();  // 弹出最大元素（默认大顶堆）
+      if(x != v[i]) return 0;    // 最大元素不等于期望值 → 不匹配
     }
-    else s.push(v[i]);
+    else s.push(v[i]);  // 插入操作：加入优先队列
   }
   return 1;
 }
@@ -203,14 +375,15 @@ int check_pq() {
 int main() {
   while(scanf("%d", &n) == 1) {
     for(int i = 0; i < n; i++) scanf("%d%d", &t[i], &v[i]);
-    int s = check_stack();
-    int q = check_queue();
-    int pq = check_pq();
-    if(!s && !q && !pq) printf("impossible\n");
-    else if(s && !q && !pq) printf("stack\n");
-    else if(!s && q && !pq) printf("queue\n");
-    else if(!s && !q && pq) printf("priority queue\n");
-    else printf("not sure\n");
+    int s = check_stack();   // 检查是否匹配栈
+    int q = check_queue();   // 检查是否匹配队列
+    int pq = check_pq();     // 检查是否匹配优先队列
+    // 根据匹配结果输出判断
+    if(!s && !q && !pq) printf("impossible\n");        // 三种都不匹配
+    else if(s && !q && !pq) printf("stack\n");          // 唯一匹配栈
+    else if(!s && q && !pq) printf("queue\n");           // 唯一匹配队列
+    else if(!s && !q && pq) printf("priority queue\n");  // 唯一匹配优先队列
+    else printf("not sure\n");  // 多种匹配 → 不确定
   }
   return 0;
 }
@@ -219,33 +392,97 @@ int main() {
 
 ## 例题4  K个最小和（K Smallest Sums, UVa 11997）
 
+### 题目描述
+给定K个已经排好序的整数数组，每个数组的长度都是K。现在从每个数组中各选一个数，将这K个数求和，可以得到K^K种可能的和。你需要找出其中**最小的K个和**。
+
+- **输入格式**：多组测试数据。每组数据第一行为K，接下来K行，每行K个整数（每个数组一行，已升序排列）。
+- **输出格式**：每组一行，输出最小的K个和，按升序排列，空格分隔。
+- **约束**：K ≤ 768，数组中的元素值在合理范围内。
+
+### 解题思路
+
+**核心问题**：K 个有序数组各取一个数求和，找出最小的 K 个和。暴力枚举 K^K 种组合不可能。
+
+**关键思路：逐步合并（归约）**
+
+先把第 1 个和第 2 个数组合并 → 得到最小的 K 个和。再用这个结果和第 3 个数组合并 → 以此类推，直到处理完所有 K 个数组。
+
+问题归约为：**给定两个有序数组 A 和 B（各 K 个元素），找出 A[i] + B[j] 中最小的 K 个和。**
+
+**二路归并求前 K 小和（核心 Merge 函数）**
+
+假设 A 和 B 都从小到大排序。对于固定的 i，A[i] + B[0] 是最小的，A[i] + B[1] 是第二小的，依次类推。
+
+**思路**：维护一个优先队列（最小堆），每个候选是一个"还没被选出的 A[i] + B[j]"。
+
+初始化：将每个 i 对应的 A[i] + B[0] 入队（K 个候选）。
+
+循环 K 次，每次：
+1. 弹出堆顶（当前最小的和），这就是第 t 个最小和
+2. 将同一 A 行的下一个候选入队：A[i] + B[j+1]
+
+**巧妙的存储方式**：队列中只存 `(sum, b)`，其中 `sum = A[a] + B[b]`。当需要扩展为 B[b+1] 时：
+`新 sum = 旧 sum - B[b] + B[b+1] = A[a] + B[b+1]`
+不需要记录 a！
+
+**举例说明**（A=[1,3], B=[2,4]，求前 2 小和）：
+- 初始化：入队 (1+2=3, b=0) 和 (3+2=5, b=0)
+- 弹出 3（第 1 小）→ 扩展：(3-2+4=5, b=1) 入队
+- 弹出 5（第 2 小）→ 前 2 小和为 [3, 5]
+- 验证：所有和 = 1+2=3, 1+4=5, 3+2=5, 3+4=7，前 2 小确实是 [3, 5]
+
+**整体流程**：
+1. 读入第 1 个数组到 A
+2. 依次读入后续 K-1 个数组到 B，调用 merge(A, B) 把前 K 小结果存回 A
+3. 最终 A 就是答案
+
+### 算法方法
+**优先队列（二叉堆）+ 多路归并（K-Way Merge）**：将"K个数组各取一个数求前K小和"归约为多次二路归并。每次二路归并通过优先队列在O(K log K)时间内找到前K小的和，利用了数组有序的性质：若A[a]+B[b]是最小和，则次小的和一定在形如A[a]+B[b+1]的候选中。
+
+### 复杂度分析
+- **时间复杂度**：O(K^2 log K)。共有K-1次merge，每次merge复杂度O(K log K)（初始入队K次，循环K次每次出队O(log K)入队O(log K)）。总复杂度约 O(K^2 log K)。
+- **空间复杂度**：O(K)。优先队列最多存储K个候选元素，A和B数组各需要O(K)空间。
+
 ```cpp
 // 例题4  K个最小和（K Smallest Sums, UVa 11997）
 // http://codeforces.com/gym/100048 C
 // 陈锋
+// 题目：K个有序数组各取一个数求和，输出最小的K个和
+// 算法：逐组合并 + 优先队列多路归并
 #include <bits/stdc++.h>
 using namespace std;
 #define _for(i, a, b) for (int i = (a); i < (b); ++i)
 typedef long long LL;
 const int MAXK = 768, INF = 1e6 + 4;
-int K, A[MAXK], B[MAXK];
+int K, A[MAXK], B[MAXK];  // A: 当前累积的前K小和, B: 下一个要合并的数组
+
+// 优先队列元素：存储 A[a] + B[b] 的和以及B的下标b
+// 注意：不需要存储a，因为从sum可以通过减去B[b]加上B[b+1]来推导
 struct Item {
-  int sum, b;  // A[a] + B[b], b
+  int sum, b;  // sum = A[a] + B[b], b是B数组中的下标
   Item(int _sum, int _b) : sum(_sum), b(_b) {}
+  // 小顶堆：sum小的优先级高
   bool operator<(const Item& i) const { return sum > i.sum; };
 };
 
-void merge() {  // AxB -> A
+// 将当前数组A与B合并，结果存回A（求A和B所有配对和中前K小的）
+void merge() {
   priority_queue<Item> Q;
+  // 初始化：将每一行A[i]与B[0]的组合入队（固定B[0]，枚举A[i]）
   _for(i, 0, K) Q.push(Item(A[i] + B[0], 0));
+  // 每次取出最小的和，作为第i小的结果
   _for(i, 0, K) {
     Item it = Q.top();
-    Q.pop(), A[i] = it.sum;
+    Q.pop();
+    A[i] = it.sum;  // 第i+1小的和存入A[i]（A数组被覆盖为新的前K小和）
+    // 扩展候选：固定A中的元素不变，选B中的下一个元素
     if (it.b < K - 1)
+      // 新的sum = 原sum - B[旧下标] + B[新下标] = A[a] + B[b+1]
       Q.emplace(Item(it.sum + B[it.b + 1] - B[it.b], it.b + 1));
   }
 }
 
+// 读取数组并排序（输入保证已排序，sort用于多组数据时的通用处理）
 void read_array(int *p) {
   _for(i, 0, K) scanf("%d", &(p[i]));
   sort(p, p + K);
@@ -253,7 +490,8 @@ void read_array(int *p) {
 
 int main() {
   while (scanf("%d", &K) == 1) {
-    read_array(A);
+    read_array(A);  // 读入第一个数组作为初始的A
+    // 依次读入后续K-1个数组，逐个与A合并
     _for(i, 1, K) read_array(B), merge();
     _for(i, 0, K) printf("%d%c", A[i], i < K - 1 ? ' ' : '\n');
   }
