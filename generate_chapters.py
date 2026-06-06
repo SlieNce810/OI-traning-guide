@@ -99,12 +99,17 @@ def generate_chapter(chapter_dir, chapter_title, chapter_id):
         for cpp_file in cpp_files:
             cpp_path = os.path.join(section_path, cpp_file)
             title = extract_title(cpp_path)
-            # Relative path from src/ to the .cpp file
-            rel_path = os.path.relpath(cpp_path, SRC)
 
             lines.append(f"### {title}\n")
-            lines.append(f"```cpp")
-            lines.append(f'{{{{#include {rel_path}}}}}')
+            lines.append("```cpp")
+            # Read and embed the source code directly (mdBook {{#include}} with
+            # Unicode paths outside src/ is unreliable across CI environments)
+            try:
+                with open(cpp_path, 'r', encoding='utf-8') as f:
+                    code = f.read().rstrip('\n')
+                lines.append(code)
+            except Exception:
+                lines.append(f"// Source file: {section_name}/{cpp_file}")
             lines.append("```\n")
 
     # Write file
