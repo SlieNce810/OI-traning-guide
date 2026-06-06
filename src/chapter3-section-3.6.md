@@ -1,5 +1,113 @@
 # 3.6 排序二叉树
 
+> **学习目标**：理解 BST 退化的根因与平衡树的解决思路，掌握 Treap 的随机化平衡和 Splay 的双旋操作——特别是"旋转为什么正确"和"双旋为什么必要"这两个深层问题。
+
+## 理论基础
+
+### 为什么需要学这个？
+
+普通的二叉搜索树（BST）看起来很美：插入 O(log N)、查找 O(log N)、删除 O(log N)。但任何在 OJ 上写过 BST 的人都知道——如果数据是递增插入的，BST 会退化成一条链，时间复杂度直接炸成 O(N)。这就是为什么我们需要"平衡树"。但平衡的策略五花八门：Treap 靠随机数，Splay 靠自适应旋转，AVL 靠严格平衡因子……到底该怎么选？这一节我们聚焦两种最实用的平衡树：**Treap**（又好写、又好调）和 **Splay**（功能最强、最灵活），帮你从"退化原因"一直推到"平衡原理"，最后你会发现——Treap 的 log N 是概率保证的，Splay 的 log N 是均摊保证的，两者都是对的，只是思路不同。
+
+### 核心概念
+
+#### 1. BST 为什么会退化？
+
+**一句话定义**：当插入序列有序（或近似有序）时，BST 每次插入都沿同一边走，形成一条链，最坏高度 = N。
+
+**本质理解**：BST 的结构完全由插入顺序决定，没有任何自我调节机制。插入 [1,2,3,...,N] 时，每个新节点都比之前所有节点大，永远往右走——树的高度直接等于 N。**平衡树的核心任务，就是在插入时通过某种操作（旋转/分裂）主动调整树的形态，让高度保持 O(log N)。**
+
+#### 2. Treap：一棵"堆+BST"的混合体
+
+**一句话定义**：Treap = Tree + Heap。每个节点有两个关键词：key（BST 意义上的值）和 priority（堆意义上的随机优先级）。树按 key 满足 BST 性质，按 priority 满足堆性质。
+
+**最小示例**：插入节点 (key=x, priority=rand()) 后，先按 BST 规则放到叶子上，然后通过**旋转**向"上浮"直到满足堆性质。
+
+**本质理解**：随机化的优先级使得树的期望形态就是一棵"随机生成的 BST"，而随机 BST 的期望高度是 Θ(log N)。这不是巧合——如果你把 N 个元素按随机顺序插入普通 BST，树的期望高度也是 Θ(log N)。Treap 只是用 priority 把这个随机性"内化"到了插入过程中。
+
+**与朴素对比**：朴素 BST 没有优先级，插入后不调整；Treap 插入后通过旋转确保堆性质，让树"幸运地"保持平衡。
+
+#### 3. Splay 的双旋为什么必要？
+
+**一句话定义**：单旋（zig）只把节点向上转一级；双旋（zig-zig / zig-zag）会在"共线"情况下先把父节点转上去再把当前节点转上去。
+
+**本质理解**：只用单旋的 BST 也叫"rotate-to-root"，它的最坏均摊复杂度不是 O(log N)。Sleator 和 Tarjan 证明：引入双旋规则（zig-zig 先转父再转子，zig-zag 转两次当前节点）才能保证**均摊 O(log N)**。直观理解：单旋路径在"之字形"访问序列下会让树反复变深；双旋通过"弹跳"效应让树在均摊意义上保持高度较低。
+
+#### 4. 旋转不改变中序遍历
+
+**一句话定义**：BST 的左旋/右旋只改变父子关系，不改变节点在中序遍历中的相对顺序。
+
+**验证**：右旋 `rotate(x)` 将 x 提为其父节点 p 的上方，原来 x 的右子树变为 p 的左子树。中序遍历访问完 x 的左子树后访问 x、然后原来 x 的右子树（现在 p 的左子树）、然后是 p、最后是 p 的右子树——顺序完全不变。这保证了序列操作的正确性。
+
+#### 5. 旋转操作的结构图解（文字描述）
+
+**右旋（Zig）操作**：设 p 为父节点，x 为 p 的左儿子。右旋将 x 向上提、p 向下压。操作步骤：(1) p 的左指针指向 x 的右子树（原 x.right 变为 p.left）；(2) x 的右指针指向 p（x.right = p）；(3) 更新 x 为新的子树根。整个过程中，中序遍历顺序始终为：... < x的左子树 < x < x的旧右子树(现p左子树) < p < p的右子树 < ... ——完全不变。
+
+**左旋（Zag）操作**：对称地，x 为 p 的右儿子，左旋将 x 向上提。步骤：(1) p 的右指针指向 x 的左子树；(2) x 的左指针指向 p；(3) x 成为新根。
+
+**旋转的空间直觉**：把树想象成一串用弹簧连接的珠子。旋转相当于在 p-x 这条边上施加一个力矩——如果你把 x 往上"拎"，p 就自然地下沉到 x 的另一侧。两者之间的父子关系反转了，但它们和各自其他子树的连接关系保持不变。正因为旋转只改变 p 和 x 之间这条边的方向，而不改变任何其他边，所以中序遍历得以保持。
+
+#### 6. Splay 的 zig-zig 与 zig-zag 的正确性直觉
+
+**操作定义**：将节点 x 伸展到根时，设 p = x 的父节点，g = p 的父节点（x 的祖父）。(1) **zig-zig**：x 和 p 在 g 的同一侧（都是左儿子或都是右儿子）→ 先旋转 p（将 p 向上提过 g），再旋转 x（将 x 向上提过 p）。(2) **zig-zag**：x 和 p 在 g 的不同侧（一个左一个右）→ 连续旋转 x 两次（先提过 p，再提过 g）。
+
+**为什么 zig-zig 必须先转 p 再转 x？** 直觉来自"路径长度减半"效应。如果 x 和 p 都在 g 的左侧（一条"之"字型直链），单独旋转 x 两次虽然也能把 x 送到根，但路径上其他节点的深度减少得很慢。而先转 p 再转 x 的策略，让路径从"直链"变成了"分叉"——第一次旋转把 p 提上去后，g 和 x 分别挂在 p 的两侧，树的结构更扁平。Sleator 和 Tarjan 证明了这保证了均摊 O(log N) 的复杂度。**zig-zag 就不需要这个技巧**——x 在 g 的 zig-zag 位置（如 x 是 p 的左儿、p 是 g 的右儿），旋转 x 两次自然就把结构展平了，不需要先转 p。
+
+### 知识脉络
+
+```
+普通BST ──有序插入──→ 退化为链 O(N)
+              │
+    ┌─────────┼──────────┐
+    ▼                    ▼
+随机化平衡(Treap)     自适应平衡(Splay)
+priority=rand()        splay到根
+期望高度 O(log N)      均摊高度 O(log N)
+    │                    │
+    └───── 共同操作 ─────┘
+          旋转(rotate)
+          中序遍历不变
+```
+
+**本书跨章节连接**：平衡树不仅是独立的数据结构，它在第 1.2 节（贪心）中以 `multiset` 维护 Pareto 前沿的形式出现——维护有序集合和快速查找是贪心算法的常见前提。Splay 的强大能力还在第 3.8 节（LCT）中得到极致释放——LCT 的每条实链就是一棵 Splay，LCT 的 `access` 和 `makeroot` 操作直接复用了 Splay 的旋转和伸展能力。可持久化 Treap（3.11 节）则将平衡树的稳定性与"路径复制"思想结合，实现了文本编辑器的版本管理。
+
+### 快速上手模板
+
+```cpp
+// Treap 核心操作
+struct Node { Node *ch[2]; int v, r, s; };
+void rotate(Node*& o, int d) {  // d=0左旋, d=1右旋
+    Node* k = o->ch[d^1]; o->ch[d^1] = k->ch[d];
+    k->ch[d] = o; o->maintain(); k->maintain(); o = k;
+}
+void insert(Node*& o, int x) {
+    if (!o) o = new Node(x);
+    else {
+        int d = (x < o->v ? 0 : 1);
+        insert(o->ch[d], x);
+        if (o->ch[d]->r > o->r) rotate(o, d^1);  // 上浮
+    }
+    o->maintain();
+}
+
+// Splay 核心操作
+void splay(Node*& o, int k) {  // 将第k个元素转到根
+    o->pushdown();
+    int d = o->cmp(k);
+    if (d == 1) k -= o->ch[0]->s + 1;
+    if (d != -1) {
+        Node* p = o->ch[d]; p->pushdown();
+        int d2 = p->cmp(k);
+        int k2 = (d2 == 0 ? k : k - p->ch[0]->s - 1);
+        if (d2 != -1) {
+            splay(p->ch[d2], k2);
+            if (d == d2) rotate(o, d^1);      // zig-zig
+            else rotate(o->ch[d], d);          // zig-zag
+        }
+        rotate(o, d^1);  // zig
+    }
+}
+```
+
 ## 例题30  图询问（Graph and Queries, Tianjin 2010, LA 5031/HDU3726）
 
 ### 题目描述
@@ -373,200 +481,6 @@ int main() {
       else { scanf("%d", &y); /* 二分LCP：比较两个子串哈希是否相等 */ }
     }
   }
-  return 0;
-}
-// 25877640	11996	Jewel Magic	Accepted	C++	1.170	2020-12-23 06:11:55
-```
-#include<cstdio>
-#include<algorithm>
-#include<vector>
-using namespace std;
-
-const int maxn = 400000 + 20;
-unsigned powers[maxn];
-
-struct Node *null, *pit;
-struct Node {
-  Node *ch[2];
-  int s;           // number of nodes in the subtree
-  int flip;        // if flip=1, children and hashes are ALREADY swapped, so ch[0] and h1 are always corresponding to left child
-  int v;           // value
-  unsigned h1, h2; // hash
-
-  Node() {}
-  Node(int v) : flip(0), s(1), v(v), h1(v), h2(v) { ch[0] = ch[1] = null; }
-
-  void *operator new(size_t) { return pit++; }
-
-  // k = 1 means the smallest node
-  int cmp(int k) const {
-    int d = k - ch[0]->s;
-    if(d == 1) return -1;
-    return d <= 0 ? 0 : 1;
-  }
-  void maintain() {
-    s = ch[0]->s + ch[1]->s + 1;
-    h1 = ch[0]->h1*powers[ch[1]->s+1] + v*powers[ch[1]->s] + ch[1]->h1;
-    h2 = ch[1]->h2*powers[ch[0]->s+1] + v*powers[ch[0]->s] + ch[0]->h2;
-  }
-  void reverse() {
-    flip ^= 1;
-    swap(ch[0], ch[1]);
-    swap(h1, h2);
-  }
-  void pushdown() {
-    if(flip) {
-      flip = 0;
-      ch[0]->reverse();
-      ch[1]->reverse();
-    }
-  }
-}pool[maxn];
-
-void init_null() {
-  null = new Node();
-  null->s = 0;
-}
-
-void rotate(Node* &o, int d) {
-  Node* k = o->ch[d^1]; o->ch[d^1] = k->ch[d]; k->ch[d] = o;
-  o->maintain(); k->maintain(); o = k; 
-}
-
-// k >= 1
-void splay(Node* &o, int k) {
-  o->pushdown();
-  int d = o->cmp(k);
-  if(d == 1) k -= o->ch[0]->s + 1;
-  if(d != -1) {
-    Node* p = o->ch[d];
-    p->pushdown();
-    int d2 = p->cmp(k);
-    int k2 = (d2 == 0 ? k : k - p->ch[0]->s - 1);
-    if(d2 != -1) {
-      splay(p->ch[d2], k2);
-      if(d == d2) rotate(o, d^1); else rotate(o->ch[d], d);
-    }
-    rotate(o, d^1);
-  }
-}
-
-#include<cstring>
-struct SplaySequence {
-  char* s;
-  Node *root;
-
-  // build s[L,R)
-  Node* build(int L, int R) {
-    int M = L + (R - L) / 2;
-    Node* o = new Node(s[M]);
-    if(L < M) o->ch[0] = build(L, M);
-    if(M+1 < R) o->ch[1] = build(M+1, R);
-    o->maintain();
-    return o;
-  }
-
-  // update dummy nodes
-  // root: dummy min node
-  // root->ch[1]: dummy max node
-  // root->ch[1]->ch[0]: actual sequence
-  void update_dummy() {
-    root->ch[1]->maintain();
-    root->maintain();
-  }
-
-  Node* last() const {
-    return root->ch[1]->ch[0];
-  }
-
-  Node* build(char* s) {
-    this->s = s;
-    root = new Node('[');
-    root->ch[1] = new Node(']');
-    root->ch[1]->ch[0] = build(0, strlen(s));
-    update_dummy();
-    return root;
-  }
-
-  // splay and returns the range [L,R)
-  // L >= 1
-  Node*& range(int L, int R) {
-    splay(root, L);
-    splay(root->ch[1], R-L+1);
-    return root->ch[1]->ch[0];
-  }
-
-  void print(Node* o, int flip) {
-    if(o == null) return;
-    if(!flip) { print(o->ch[0], o->flip); printf("%c", o->v); print(o->ch[1], o->flip); }
-    else { print(o->ch[1], o->flip); printf("%c", o->v); print(o->ch[0], o->flip); }
-  }
-
-  void print() {
-    print(root, 0);
-    printf("\n");
-  }
-
-};
-
-#include<cstdlib>
-#include<ctime>
-SplaySequence ss;
-char s[maxn];
-int main()
-{
-  int n, m;
-  powers[0] = 1;
-  for(int i = 1; i < maxn; i++)
-    powers[i] = powers[i-1]*3137;
-
-
-  while(scanf("%d%d%s", &n, &m, s) == 3) {
-    SplaySequence ss;
-    pit = pool;
-    init_null();
-    ss.build(s);
-    //ss.print();
-    while (m--) {
-      int op, x, y;
-      scanf("%d%d", &op, &x);
-      // 1 p c, insert jewel c after position p (0<=p<=L), p=0 means before the whole string
-      if(op == 1) { 
-        scanf("%d", &y);
-        ss.range(x+1, x+1) = new Node(y+'0');
-        ss.update_dummy();
-        //ss.print();
-      }
-      // 2 p, remove the jewel at position p (1<=p<=L)
-      else if(op == 2) {
-        ss.range(x, x+1) = null;
-        ss.update_dummy();
-        //ss.print();
-      }
-      // 3 p1 p2, reverse the part starting from position p1, ending at position p2 (1<=p1<p2<=L)
-      else if(op == 3) {
-        scanf("%d", &y);
-        ss.range(x, y+1)->reverse();
-        ss.update_dummy();
-        //ss.print();
-      }
-      // 4 p1 p2, output the LCP length of jewel strings starting from p1 and p2 (1<=p1<p2<=L)
-      else {
-        scanf("%d", &y);
-        int L = 0, R = ss.root->s - y;
-        while(L < R-1) {
-          int M = L + (R-L)/2;
-          unsigned h1 = ss.range(x, x+M)->h1;
-          unsigned h2 = ss.last()->h2;
-          h1 -= ss.range(y, y+M)->h1;
-          h2 -= ss.last()->h2;
-          if(!h1 && !h2) L = M; else R = M;
-        }
-        printf("%d\n", L);
-      }
-    }
-  }
-  fprintf(stderr, "time = %.3lf\n", clock() / (double)CLOCKS_PER_SEC);
   return 0;
 }
 // 25877640	11996	Jewel Magic	Accepted	C++	1.170	2020-12-23 06:11:55

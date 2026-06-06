@@ -1,5 +1,117 @@
 # 4.1 二维几何基础
 
+> **学习目标**：掌握二维向量运算体系与浮点精度处理策略，用代数语言精确描述几何关系
+
+## 理论基础
+
+### 为什么需要学这个？
+
+想象一下：给你一个三角形和一条线段，让你判断它们是否相交。如果纯用几何直觉——画图、量距离、看位置——不仅效率低，代码也写不出一行。计算几何的核心思想，就是把"看图说话"转化为"代数运算"。向量就是这中间的语言翻译官：两点相减得到方向，叉积判断左右，点积衡量远近，旋转矩阵改变方向——这些看似简单的操作，组合起来就能描述平面上的任何几何关系。
+
+等你掌握了这些基本工具，就会发现：之前让人头疼的"点是否在多边形内"、"线段是否相交"、"多边形面积"这些问题，全都可以用三四行公式搞定。更重要的是，这些工具是你后面学习凸包、半平面交、旋转卡壳等高级算法的地基——地基不牢，后面的高楼根本建不起来。
+
+### 核心概念
+
+**1. 向量与基本运算**
+
+向量本质上是一个从原点出发的有向箭头，用 `Vector(x, y)` 表示。两个点 A 和 B 相减 `B - A` 就得到了从 A 指向 B 的向量。
+
+最小的代码骨架：
+```cpp
+struct Point { double x, y; };
+typedef Point Vector;
+Vector operator-(const Point& A, const Point& B) { return Vector(A.x-B.x, A.y-B.y); }
+```
+
+真正的威力在点积和叉积：
+- **点积** `Dot(A, B) = A.x*B.x + A.y*B.y = |A||B|cosθ`：判断两向量夹角。正→锐角，零→垂直，负→钝角。配合 `acos` 可直接算角度。
+- **叉积** `Cross(A, B) = A.x*B.y - A.y*B.x = |A||B|sinθ`：判断方向与面积。正→B 在 A 逆时针方向，零→共线，负→顺时针。几何意义是平行四边形有向面积的 2 倍。
+
+**右手定则**是理解叉积符号的直观工具：伸出右手，四指从 A 弯向 B（沿较小夹角方向），若拇指朝上（指向屏幕外/z轴正方向），则 `Cross(A,B) > 0`，B 在 A 的逆时针方向；若拇指朝下，则 `Cross(A,B) < 0`，B 在 A 的顺时针方向。在二维平面中，叉积退化为标量，其符号恰好对应 z 分量的正负——`Cross(A,B)` 就是三维叉积 `A×B` 的 z 分量值。这也解释了为什么"逆时针为正"：在标准右手坐标系中，从 x 轴转向 y 轴时拇指指向 z 轴正方向。
+
+**2. 点线面关系判断**
+
+所有线段相关判断都归结为两个函数的组合：
+- **OnSegment(P, A, B)**：先 `Cross(A-P, B-P) == 0`（三点共线），再 `Dot(A-P, B-P) < 0`（P 在中间），两步确认 P 在线段 AB 上。
+- **SegmentProperIntersection**：线段 AB 与 CD 规范相交 = A、B 在直线 CD 两侧 **且** C、D 在直线 AB 两侧。用 `dcmp(c1)*dcmp(c2) < 0` 的异侧判断。
+
+一条线段、一条直线、一个多边形——归根到底都是向量运算的不同组合。
+
+**3. 浮点精度：eps 的艺术**
+
+几何计算绕不过浮点误差。`0.1 + 0.2 != 0.3` 是每个竞赛选手都会踩的坑。标准做法：
+```cpp
+const double eps = 1e-10;
+int dcmp(double x) { if (fabs(x) < eps) return 0; return x < 0 ? -1 : 1; }
+```
+- `eps` 不能太小（10⁻¹² 会误判共线），也不能太大（10⁻⁶ 会误判相交）。**经验值 10⁻⁸ 到 10⁻¹⁰ 最常用**。
+- 比较 `a == b` 写成 `dcmp(a-b) == 0`，`a < b` 写成 `dcmp(a-b) < 0`。
+- 排序用 `operator<` 时不要在内部加 eps——可能导致 `a<b`、`b<c`、`c<a` 的传递性失效。
+
+**浮点比较的三个层次**：第一层是**绝对误差**（`fabs(a-b) < eps`），即 `dcmp` 的做法，适用于数值范围已知且不大的情况。第二层是**相对误差**（`fabs(a-b) / max(fabs(a), fabs(b)) < eps`），当比较的数值本身可能很大时更可靠——10000.00 和 10000.01 的绝对差为 0.01，但相对差仅 10⁻⁶，比固定 ε 更有意义。第三层是**ULP比较**（Unit in the Last Place），直接比较两个浮点数二进制表示的最后一位之差，需要操作内存表示（如 `memcmp`），在几何竞赛中很少使用，但它是最接近"机器级精确"的比较方式。竞赛编程中 99% 的情况使用第一层（`dcmp`）即可，但理解后两层有助于在极端数据下定位精度问题。
+
+**4. 欧拉定理 V - E + F = 2**
+
+这是几何数数的"核武器"。任意平面图（边不相交），顶点数 V、边数 E、面数 F 满足 `V - E + F = 2`。你不需要数面，只需数顶点和边，代入公式直接得到答案。本章例题 2 就是经典应用题：把自交折线的交点全部找出来当顶点，原边被交点分割后重新数边数，代公式算出区域数。
+
+**5. 向量旋转公式的推导**
+
+旋转矩阵 `Rotate(A, θ)` 的公式 `(x·cosθ - y·sinθ, x·sinθ + y·cosθ)` 是怎么来的？有两种等价推导方式。**复数法**：将向量 A 看作复数 `z = x + iy`，逆时针旋转 θ 等价于乘以单位复数 `e^(iθ) = cosθ + i·sinθ`，即 `(x+iy)(cosθ+i·sinθ) = (x·cosθ - y·sinθ) + i(x·sinθ + y·cosθ)`，实部虚部分别对应 x' 和 y'。**三角恒等式法**：设 A 的极角为 α，则 `x = r·cosα, y = r·sinα`。旋转后极角变为 α+θ，代入和角公式得 `x' = r·cos(α+θ) = r(cosα·cosθ - sinα·sinθ) = x·cosθ - y·sinθ`，同理 `y' = r·sin(α+θ) = x·sinθ + y·cosθ`。两种观点殊途同归，复数视角更简洁地体现了"旋转即乘法"的本质。
+
+### 知识脉络
+
+```
+向量基本运算（点积、叉积）
+    ├── 点线关系判断（OnSegment、求交、规范相交）
+    │       └── 浮点精度处理（dcmp + eps）
+    │               └── 基础几何操作（距离、角度、面积）
+    └── 图论组合（欧拉定理 V-E+F=2）
+```
+
+所有高级算法都建立在这几个基础操作之上。先学会"点积和叉积能做什么"，再用它们解决"点是否在线段上"、"线段是否相交"等具体问题。
+
+**本书跨章节连接**：几何中的**二分判定策略**与第 1.2 节的二分答案方法一脉相承——在几何判定问题中（如"是否存在满足距离约束的点"），二分搜索负责缩小搜索范围，几何的计算操作用来判定可行性。本章的向量运算体系是所有后续几何章节（4.2 圆、4.3 凸包/半平面交、4.4 三维几何）的共同基础。欧拉定理 V-E+F=2 则在第 3.2 节的图论类问题中有类似的结构——用拓扑不变量代替直接计数。
+
+### 快速上手模板
+
+竞赛中最常用的二维几何结构体。这个模板是本章所有例题的地基，建议熟记并手写练习至少三遍：
+
+```cpp
+#include <cmath>
+const double eps = 1e-10;
+int dcmp(double x) { if (fabs(x) < eps) return 0; return x < 0 ? -1 : 1; }
+
+struct Point {
+    double x, y;
+    Point(double x = 0, double y = 0) : x(x), y(y) {}
+};
+typedef Point Vector;
+
+// 向量四则运算
+Vector operator+(const Vector& A, const Vector& B) { return Vector(A.x+B.x, A.y+B.y); }
+Vector operator-(const Point& A, const Point& B)  { return Vector(A.x-B.x, A.y-B.y); }
+Vector operator*(const Vector& A, double p)        { return Vector(A.x*p, A.y*p); }
+Vector operator/(const Vector& A, double p)        { return Vector(A.x/p, A.y/p); }
+bool operator<(const Point& a, const Point& b)
+{ return a.x < b.x || (a.x == b.x && a.y < b.y); }
+
+// 核心运算
+double Dot(const Vector& A, const Vector& B)   { return A.x*B.x + A.y*B.y; }
+double Length(const Vector& A)                  { return sqrt(Dot(A, A)); }
+double Cross(const Vector& A, const Vector& B) { return A.x*B.y - A.y*B.x; }
+
+// 高频功能：旋转、角度、法向量
+Vector Rotate(Vector A, double rad)
+{ return Vector(A.x*cos(rad)-A.y*sin(rad), A.x*sin(rad)+A.y*cos(rad)); }
+double Angle(const Vector& A, const Vector& B)
+{ return acos(Dot(A,B) / Length(A) / Length(B)); }
+Vector Normal(Vector A) { double L = Length(A); return Vector(-A.y/L, A.x/L); }
+
+// 直线求交：P+t*v 与 Q+s*w → t = Cross(w,P-Q)/Cross(v,w)
+Point GetLineIntersection(Point P, Vector v, Point Q, Vector w)
+{ Vector u = P-Q; double t = Cross(w,u)/Cross(v,w); return P+v*t; }
+```
+
 ## 例题2  好看的一笔画（That Nice Euler Circuit, Shanghai 2004, LA3263）
 
 ### 题目描述

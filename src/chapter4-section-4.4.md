@@ -1,5 +1,137 @@
 # 4.4 三维几何基础
 
+> **学习目标**：将二维向量运算自然推广到三维，掌握叉积法向量与混合积在体积和共面判断中的核心作用
+
+## 理论基础
+
+### 为什么需要学这个？
+
+二维几何你已经玩得很熟了——点积看角度，叉积看方向。但现实世界是三维的，题目也会出三维三角形相交、三维凸包、线段最短距离这类问题。好消息是：**大部分三维几何的套路就是二维的直接推广，只是加了一个分量**。点积还是 `x1*x2 + y1*y2 + z1*z2`，多了一个 `z`；叉积从标量变成一个三维向量（法向量）；混合积把叉积和点积串起来得到体积。
+
+坏消息是：多了一个维度意味着退化情况更多、坐标范围更大时整数运算易溢出。但只要掌握"三维叉积 = 法向量"、"混合积 = 体积（共面判断）"这两个核心理解，你就能和二维一样轻松处理三维几何。
+
+### 核心概念
+
+**1. 三维叉积与混合积**
+
+三维叉积的结果是一个向量，不是标量：
+```cpp
+Vector3 Cross(const Vector3& A, const Vector3& B) {
+    return Vector3(A.y*B.z - A.z*B.y,   // x 分量
+                   A.z*B.x - A.x*B.z,   // y 分量
+                   A.x*B.y - A.y*B.x);  // z 分量
+}
+```
+**几何意义**：`Cross(A, B)` 是垂直于 A 和 B 的法向量，其模长 `|A×B|` = 以 A、B 为边的平行四边形面积（即 `Area2`）。这是计算平面方向（法向量）和三角形面积的核心工具。
+
+混合积把点积和叉积串起来：
+```cpp
+double Volume6(const Point3& A, const Point3& B,
+               const Point3& C, const Point3& D) {
+    return Dot(D - A, Cross(B - A, C - A));
+}
+```
+**几何意义**：以 A、B、C、D 为顶点的四面体有向体积的 **6 倍**。`Volume6 == 0` 等价于四点共面——这是三维共面判断的核心工具。`Volume6 > 0` 表示 D 在三角形 ABC 的法向量方向一侧。
+
+**混合积符号的几何含义**：混合积 `(a×b)·c` 的符号揭示了三个向量的空间定向关系。当 `(a×b)·c > 0` 时，a、b、c 构成**右手系**——你可以用右手定则验证：四指从 a 弯向 b，拇指指向 a×b 方向，若 c 与拇指方向成锐角（同侧），则点积为正；当 `(a×b)·c < 0` 时，三个向量构成**左手系**——c 指向法向量的反方向；当 `(a×b)·c = 0` 时，c 与 a×b 垂直，即 c 落在 a 和 b 张成的平面内——三向量**共面**。这就是 `Volume6(P₀,P₁,P₂,P) == 0` 等价于四点共面的理论基础：取 `a = P₁-P₀, b = P₂-P₀, c = P-P₀`，则 c 落在 a 和 b 的平面内 ⇔ 四点共面。这个符号信息还常用于判断多面体的"内外"：取面的外法向量，体积的符号就告诉我们在该面的哪一侧。
+
+**四面体体积公式 V = |(a×b)·c| / 6 的推导**：以三向量 a、b、c 为棱的平行六面体体积为 `|(a×b)·c|`（底面积 |a×b| 乘以高 |c·n|，其中 n = (a×b)/|a×b| 为单位法向量）。而四面体恰好是此平行六面体的 1/6——可以用三重积分的雅可比行列式严格证明，直观理解则分两步：首先，棱柱体积是平行六面体的一半（沿底面对角线切开），即 `|(a×b)·c|/2`；其次，四面体又是该棱柱的 1/3（锥体体积 = 底面积×高/3），合计 1/6。因此 `V_tetrahedron = |Volume6(P₀,P₁,P₂,P₃)| / 6`。
+
+**2. 点到平面距离**
+
+给定平面上一点 P₀ 和单位法向量 n，任意点 P 到平面的有向距离：
+```cpp
+double DistanceToPlane(const Point3& P, const Point3& P0, const Vector3& n) {
+    return fabs(Dot(P - P0, n));  // n 必须为单位向量
+}
+```
+法向量 n 通过平面上任意两条不共线向量的叉积得到并单位化：
+```cpp
+Vector3 n = Cross(B-A, C-A);
+n = n / Length(n);  // 单位化
+```
+求点在平面上的投影：
+```cpp
+Point3 GetPlaneProjection(const Point3& P, const Point3& P0, const Vector3& n) {
+    return P - n * Dot(P - P0, n);
+}
+```
+本质是把点沿法向量方向"拍"到平面上。这在需要降维（从三维到二维）时非常有用。
+
+**4. 直线与平面的交点计算**
+
+给定平面 `(P₀, n)`（过点 P₀，法向量 n 不一定单位化）和直线参数式 `A + t·(B-A)`，求直线与平面的交点。核心公式：`t = Dot(n, P₀ - A) / Dot(n, B - A)`。当 `Dot(n, B-A) = 0` 时为退化情况——直线平行于平面（或落在平面内），无交点或无穷多交点。正常情况代入 `t` 得交点 `P = A + (B-A) * t`。推导过程：交点 P 既在直线上（`P = A + t·(B-A)`）又在平面上（满足 `Dot(n, P-P₀) = 0`），代入直线式得 `Dot(n, A + t·(B-A) - P₀) = 0`，整理得 `t·Dot(n, B-A) + Dot(n, A-P₀) = 0`，解出 t。该公式与二维直线求交 `t = Cross(w, P-Q) / Cross(v, w)` 在结构上高度一致——二维中用叉积（标量），三维中用点积（投影到法向量）。两者都利用了"代入参数方程消元"这一核心思路。
+
+**3. 点在三角形内 — 两步分解**
+
+三维中判断点 P 是否在三角形 `P₀P₁P₂` 内部需要两步策略：
+1. **共面检查**：`dcmp(Volume6(P₀, P₁, P₂, P)) == 0`——确认 P 在三角形所在平面上
+2. **三角形内判断**：使用同侧法 `SameSide`。对每条边 `P₁P₂`，判断 P 与第三个顶点 P₀ 是否在直线同侧：
+
+```cpp
+bool SameSide(const Point3& p1, const Point3& p2,
+              const Point3& a, const Point3& b) {
+    return dcmp(Dot(Cross(b-a, p1-a), Cross(b-a, p2-a))) >= 0;
+}
+bool PointInTri(const Point3& P, const Point3& P0,
+                const Point3& P1, const Point3& P2) {
+    return SameSide(P, P0, P1, P2) &&
+           SameSide(P, P1, P0, P2) &&
+           SameSide(P, P2, P0, P1);
+}
+```
+理解：`Cross(b-a, p-a)` 得到的是垂直于三角形平面的向量，对两个这样的向量做点积，同向为正（同侧），反向为负（异侧）。三步同侧检查确保 P 落在三边围成的区域内。
+
+### 知识脉络
+
+```
+二维推广到三维（多加一个 z 分量）
+    ├── 叉积 → 三维向量（法向量），模长 = 平行四边形面积
+    │       └── 平面法向量 ← Cross(B-A, C-A) / Length(...)
+    │               └── 线段与平面求交（参数 t = Dot(n, P0-A) / Dot(n, B-A)）
+    ├── 混合积 = Dot(D-A, Cross(B-A, C-A))
+    │       ├── 四面体体积的 6 倍（Volume6）
+    │       └── 四点共面判断（Volume6 == 0）
+    │               └── 点到平面距离 = |Dot(P-P₀, n)|
+    └── 点在三角形内 = 共面判断（Volume6） + 同侧法三步检查（SameSide）
+```
+
+### 快速上手模板
+
+```cpp
+struct Point3 {
+    double x, y, z;
+    Point3(double x=0, double y=0, double z=0) : x(x), y(y), z(z) {}
+};
+typedef Point3 Vector3;
+
+Vector3 operator+(const Vector3& A, const Vector3& B)
+{ return Vector3(A.x+B.x, A.y+B.y, A.z+B.z); }
+Vector3 operator-(const Point3& A, const Point3& B)
+{ return Vector3(A.x-B.x, A.y-B.y, A.z-B.z); }
+Vector3 operator*(const Vector3& A, double p)
+{ return Vector3(A.x*p, A.y*p, A.z*p); }
+Vector3 operator/(const Vector3& A, double p)
+{ return Vector3(A.x/p, A.y/p, A.z/p); }
+
+double Dot(const Vector3& A, const Vector3& B)
+{ return A.x*B.x + A.y*B.y + A.z*B.z; }
+double Length(const Vector3& A) { return sqrt(Dot(A, A)); }
+Vector3 Cross(const Vector3& A, const Vector3& B)  {
+    return Vector3(A.y*B.z - A.z*B.y, A.z*B.x - A.x*B.z, A.x*B.y - A.y*B.x);
+}
+double Volume6(const Point3& A, const Point3& B,
+               const Point3& C, const Point3& D) {
+    return Dot(D - A, Cross(B - A, C - A));
+}
+double Area2(const Point3& A, const Point3& B, const Point3& C) {
+    return Length(Cross(B - A, C - A));
+}
+```
+
+对照二维模板，你会发现三维的核心操作结构几乎一样，只是 `Cross` 变成了三维向量，还多了个 `Volume6`。这个模板同样是所有三维几何问题的基础。
+
+**本书跨章节连接**：三维几何是二维几何的"升维"版本。本章的核心操作——叉积（法向量）、点积（投影/距离）、直线与平面求交——都是第 4.1 节二维模板的三维推广。**混合积 Volume6** 是三维特有的工具，其"共面判断"能力（Volume6==0）在第 3.2 节的几何构造类问题中也有类似场景——用行列式/叉积判断退化和共线性。三维凸包在例题 18（行星问题）中的增量构造算法，其"可见性判断 + 分界线"逻辑与第 3.8 节（LCT）的"access 时断旧接新"在拓扑上有相似的"边界追踪"思想。
 ## 例题20  黄金屋顶（The Golden Ceiling，ACM/ICPC, Greater New York 2011, LA5808）
 
 ### 题目描述
